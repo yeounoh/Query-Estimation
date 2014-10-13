@@ -37,7 +37,7 @@ public class Estimator {
 			if(!hist.containsKey(k)){
 				hist.put(k, new HistBar(s.getID(),s.getID(),1));
 			}
-			else{
+			else{ 
 				HistBar bar = hist.get(k);
 				bar.count++;
 				hist.put(k,bar);

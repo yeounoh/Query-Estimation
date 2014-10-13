@@ -1,5 +1,6 @@
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Random;
 
 import com.mysql.jdbc.exceptions.jdbc4.MySQLSyntaxErrorException;
@@ -69,7 +70,7 @@ public class Database {
 		}
 		if(type == 2){
 			//SELECT * FROM table ORDER BY RAND() LIMIT 10000
-			String query = "select * from " + table + "order by rand() limit " + s_size;
+			String query = "select * from " + table + " order by rand() limit " + s_size;
 			resultSet = statement.executeQuery(query);
 		}
 		
@@ -93,28 +94,24 @@ public class Database {
 	 * @param sample
 	 * @return
 	 */
-	public ArrayList<Person> resample(int s_size, Person[] sample){
+	public ArrayList<Person> resample(int s_size, Person[] sample, int[] dist){
+		ArrayList<Person> resampled = new ArrayList<Person>();
+		HashMap<String,String> map = new HashMap<String,String>();
 		//correlation: "coffee lovers are more likely to respond."
-		int[] dist = {1,1,1,1,1,1,1,1,2,3};
 		Random r = new Random();
 		
 		int cnt=0;
 		while(cnt < s_size){
-			int idx = r.nextInt(sample.length);
-			r.nextInt(10);
-			sample[idx].getCoffee()
-			if(<){
-				
+			int idx = r.nextInt(sample.length); //choose a sample
+			Person p = sample[idx];
+			if(p != null && !map.containsKey(""+idx) && r.nextInt(10)<7+dist[p.getCoffee()]){
+				resampled.add(p);
+				map.put(""+idx,""+0);
+				cnt++;
 			}
-			cnt++;
 		}
 		
-		for(int i=0;i<sample.length;i++){
-			int nc = sample[i].getCoffee();
-			
-		}
-		
-		return null;
+		return resampled;
 	}
 	
 	public Person[] selectAll(String from) throws SQLException {
