@@ -22,25 +22,40 @@ public class Estimator {
 		}
 	}
 	
-	public Estimator(Person[] sample){
+	public Estimator(Object[] sample){
 		t_sum = 0;
 		HashMap<String,HistBar> hist = new HashMap<String,HistBar>();
-		for(Person s:sample){
+		for(Object s:sample){
 			if(s==null){ //why do we have bad samples?
 				//System.out.println("Bad sample");
 				continue;
 			}
 			
-			t_sum += s.getCoffee();
-			
-			String k = ""+s.getID();
-			if(!hist.containsKey(k)){
-				hist.put(k, new HistBar(s.getID(),s.getID(),1));
+			if(s instanceof Person){
+				t_sum += ((Person) s).getCoffee();
+				
+				String k = ""+((Person) s).getID();
+				if(!hist.containsKey(k)){
+					hist.put(k, new HistBar(((Person) s).getID(),((Person) s).getID(),1));
+				}
+				else{ 
+					HistBar bar = hist.get(k);
+					bar.count++;
+					hist.put(k,bar);
+				}
 			}
-			else{ 
-				HistBar bar = hist.get(k);
-				bar.count++;
-				hist.put(k,bar);
+			else if(s instanceof State){
+				t_sum += ((State) s).getGDP();
+				
+				String k = ""+((State) s).getName();
+				if(!hist.containsKey(k)){
+					hist.put(k, new HistBar(((State) s).getRank(),((State) s).getRank(),1));
+				}
+				else{ 
+					HistBar bar = hist.get(k);
+					bar.count++;
+					hist.put(k,bar);
+				}
 			}
 		}
 		this.n = sample.length;

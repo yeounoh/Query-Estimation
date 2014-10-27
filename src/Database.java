@@ -34,14 +34,22 @@ public class Database {
 		}
 	}
 	
-	public void createTable(String table) throws SQLException {
+	public void createCoffeeTable(String table) throws SQLException {
 		try{
 			statement.execute("create table " + table + " (id int, age int, coffee int)");
 		}
 		catch(SQLException se){
 			se.printStackTrace();
 		}
-		
+	}
+	
+	public void createGDPTable(String table) throws SQLException {
+		try{
+			statement.execute("create table " + table + " (name varchar(20), rank int, gdp int)");
+		}
+		catch(SQLException se){
+			se.printStackTrace();
+		}
 	}
 	
 	public void insert(String table, Person s) throws SQLException{
@@ -54,9 +62,18 @@ public class Database {
 		preparedStatement.execute();
 	}
 	
-	public Person[] sample(int s_size, int p_size, String table, int type) throws SQLException {
-		
-		Person[] people = new Person[s_size];
+	public void insert(String table, State s) throws SQLException{
+		//preparedStatements can use variables and are more efficient
+		preparedStatement = connect
+				.prepareStatement("insert into " + table + " values (?, ?, ?)");
+		preparedStatement.setString(1, s.getName());
+		preparedStatement.setInt(2, s.getRank());
+		preparedStatement.setInt(3, s.getGDP());
+		preparedStatement.execute();
+	}
+	
+	public Object[] sample(int s_size, int p_size, String table, int type) throws SQLException {
+		Object[] result = new Object[s_size];
 		statement = connect.createStatement();
 		
 		//sampling with replacement
@@ -68,24 +85,45 @@ public class Database {
 			String query = "select * from " + table + " s join temp r on s.id = r.idx";
 			resultSet = statement.executeQuery(query);
 		}
-		if(type == 2){
+		//sampling with replacement
+		if(type == 3){
+			statement.execute("create table temp (idx int)");
+			for(int i=0;i<s_size;i++){
+				statement.execute("insert temp select rand()*"+p_size +"+ 1");
+			}
+			String query = "select * from " + table + " s join temp r on s.rank = r.idx";
+			resultSet = statement.executeQuery(query);
+		}		
+		if(type == 2 || type == 4){
 			//SELECT * FROM table ORDER BY RAND() LIMIT 10000
 			String query = "select * from " + table + " order by rand() limit " + s_size;
 			resultSet = statement.executeQuery(query);
 		}
 		
-		int idx= 0;
-		while(resultSet.next()){
-			int id = resultSet.getInt("id");
-			int age = resultSet.getInt("age");
-			int coffee = resultSet.getInt("coffee");
-			people[idx++] = new Person(id, age, coffee);
+		if(type == 1 || type == 2){
+			int idx= 0;
+			while(resultSet.next()){
+				int id = resultSet.getInt("id");
+				int age = resultSet.getInt("age");
+				int coffee = resultSet.getInt("coffee");
+				result[idx++] = new Person(id, age, coffee);
+			}
 		}
 		
-		if(type == 1)
+		if(type == 3 || type == 4){
+			int idx= 0;
+			while(resultSet.next()){
+				String name = resultSet.getString("name");
+				int rank = resultSet.getInt("rank");
+				int gdp = resultSet.getInt("gdp");
+				result[idx++] = new State(name, rank, gdp);
+			}
+		}
+		
+		if(type == 1 || type == 3)
 			statement.execute("drop table temp");
 		
-		return people;
+		return result;
 	}
 	
 	/**
@@ -94,8 +132,8 @@ public class Database {
 	 * @param sample
 	 * @return
 	 */
-	public ArrayList<Person> resample(int s_size, Person[] sample, int[] dist){
-		ArrayList<Person> resampled = new ArrayList<Person>();
+	public ArrayList<Object> resample(int s_size, Object[] sample, int[] dist){
+		ArrayList<Object> resampled = new ArrayList<Object>();
 		HashMap<String,String> map = new HashMap<String,String>();
 		//correlation: "coffee lovers are more likely to respond."
 		Random r = new Random();
@@ -103,11 +141,21 @@ public class Database {
 		int cnt=0;
 		while(cnt < s_size){
 			int idx = r.nextInt(sample.length); //choose a sample
-			Person p = sample[idx];
-			if(p != null && !map.containsKey(""+idx) && r.nextInt(10)<7+dist[p.getCoffee()]){
-				resampled.add(p);
-				map.put(""+idx,""+0);
-				cnt++;
+			if(sample[idx] instanceof Person){
+				Person p = (Person) sample[idx];
+				if(p != null && !map.containsKey(""+idx) && r.nextInt(10)<7+dist[p.getCoffee()]){
+					resampled.add(p);
+					map.put(""+idx,""+0);
+					cnt++;
+				}
+			}
+			else if(sample[idx] instanceof State){
+				State s = (State) sample[idx];
+				if(s != null && !map.containsKey(""+idx) && (r.nextInt(50)+20)>dist[s.getRank()-1]){
+					resampled.add(s);
+					map.put(""+idx,""+0);
+					cnt++;
+				}
 			}
 		}
 		

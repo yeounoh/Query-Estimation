@@ -1,14 +1,13 @@
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Random;
-
-import ParserMovieLens.User;
-
 
 public class DataGenerator {
 	
@@ -28,36 +27,23 @@ public class DataGenerator {
 		}
 	}
 	
-	public void loadData(Database db, String table, int p_size, int base) throws SQLException {
-		FileInputStream fis= null;
-		BufferedReader br= null;
-		String[] tokens= null;
-		FileOutputStream fos= null, fos2= null, fos3= null;
-		BufferedWriter bw= null, bw2= null, bw3= null;
-		String line, wline;
+	public int loadGDP(Database db, String table) throws SQLException, IOException {
+		String input = "C:\\Users\\user\\workspace\\Query Estimation\\data\\gdp_us.csv";
+		FileInputStream fis= new FileInputStream(input);
+		BufferedReader br= new BufferedReader(new InputStreamReader(fis));
 		
-		fis= new FileInputStream(src_dir + "/u.data");
-		br= new BufferedReader(new InputStreamReader(fis));
-		
-		//to alleviate the issue of frequent file open/close operations
-		HashMap<String, User> uid_map= new HashMap<String, User>(nuser);
-		
+		String line;
+		for(int i=0;i<4;i++){
+			System.out.println(br.readLine());
+		}
+		int cnt = 0;
 		while((line = br.readLine())!=null){
-			tokens = line.split("\t|::");
-			String tuid = tokens[0]; 
-			String trating = "" + tokens[1] + ":" + tokens[2];
-			String ttimestamp = "" + tokens[1] + ":" + tokens[3];
-			
-			if(uid_map.containsKey(tuid)){
-				uid_map.get(tuid).addRating(trating);
-				uid_map.get(tuid).addTimestamp(ttimestamp);
-			}
-			else{
-				User tuser = new User(Integer.parseInt(tuid),trating,ttimestamp);
-				uid_map.put(tuid, tuser);
-			}
+			String[] tokens = line.split(",");
+			State s = new State(tokens[0], Integer.parseInt(tokens[1]), Integer.parseInt(tokens[2]));
+			db.insert(table, s);
 		}
 		br.close();
+		return cnt;
 	}
 	
 	public Person[] generatePeople(int n, int base){	
