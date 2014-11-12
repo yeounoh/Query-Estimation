@@ -5,7 +5,6 @@ import java.util.Iterator;
 // https://github.com/yeounoh/Query-Estimation.git
 public class Main {
 
-	
 	public static Database genCoffee(String db_name, String[] table_name, int p_size, boolean do_gen) throws Exception{
 		Database db = new Database(); 
 		db.connect(db_name); //if "coffee" is not present, then create a new database
@@ -51,7 +50,8 @@ public class Main {
 	public static void main(String[] args){
 		try{
 			boolean coffee_eg = false;
-			boolean gdp_eg = true;
+			boolean gdp_eg = false;
+			boolean gdp_real = false;
 			
 			if(coffee_eg){
 				//database configuration-1
@@ -116,7 +116,6 @@ public class Main {
 							}
 						}
 						
-						
 						int[] cnts= new int[nbuckets]; //# cups of coffee
 						Object[][] buckets = new Object[nbuckets][];;
 						for(Object s:samples){
@@ -165,9 +164,10 @@ public class Main {
 			
 			if(gdp_eg){
 				//database configuration-2
-				String[] table_name = {"usa"}; 
-				int p_size = 50; 
 				String db_name = "gdp";
+				String[] table_name = {"usa", "usa_real"}; 
+				int p_size = 50; 
+				
 				boolean do_gen = false; //generate new coffee data set?
 				Database db = genGDP(db_name, table_name, do_gen);
 				
@@ -176,101 +176,108 @@ public class Main {
 				int[] n_itr = {3, 10, 30}; // number of workers
 				int sampling_type = 4; //3: with replacement, 4: without replacement
 				int[] nbuckets = {1, 3, 5, 10, 20};
-				int[] dist = new int[50];
-				for(int i=0;i<50;i++){
-					dist[i]=(50-i)/2;
+				double[] lamda = {0.5, 1.0}; //correlation factor
+				
+				//estimate population statistics from samples (method1: naive)
+				for(int i=0;i<s_size.length;i++){
+					for(int cri=0;cri<lamda.length;cri++){
+						System.out.println("lamda: " + lamda[cri]);
+						for(int j=0;j<n_itr.length;j++){
+							System.out.println("#worker: "+n_itr[j]);
+							
+							ArrayList<Object> samples = new ArrayList<Object>(); 
+							for(int jj=0;jj<n_itr[j];jj++){
+								for(int k=0;k<table_name.length;k++){
+									Object[] sample = db.sample(s_size[i]*3, p_size, table_name[k], sampling_type);
+								
+									//resampling: likelihood of individual to be selected
+									//ArrayList<Object> resampled = db.resample(s_size[i], sample, dist);
+									ArrayList<Object> resampled = db.resample(s_size[i], sample, lamda[cri]);
+									
+									//worker arrival rates?
+									Iterator itr = resampled.iterator();
+									while(itr.hasNext()){
+										samples.add(itr.next());
+									}
+								}
+							}
+							Object[] samples_arr = new Object[samples.size()];
+							Object[] temp = samples.toArray();
+							for(int ii=0;ii<samples_arr.length;ii++){
+								samples_arr[ii] = temp[ii];
+							}
+							Estimator est = new Estimator(samples_arr);	
+							System.out.println(" "+samples.size()+" "+est.chao92()+" "+est.sum()); //sum(*)
+						}
+					}
 				}
 				
-				//estimate population statistics from samples (method1)
-//				for(int i=0;i<s_size.length;i++){
-//					for(int j=0;j<n_itr.length;j++){ 
-//						ArrayList<Object> samples = new ArrayList<Object>(); 
-//						for(int jj=0;jj<n_itr[j];jj++){//number of workers
-//							for(int k=0;k<table_name.length;k++){
-//								Object[] sample = db.sample(s_size[i]*3, p_size, table_name[k], sampling_type);
-//								
-//								//resampling: likelihood of individual to be selected
-//								ArrayList<Object> resampled = db.resample(s_size[i], sample, dist);
-//								
-//								//worker arrival rates?
-//								Iterator itr = resampled.iterator();
-//								while(itr.hasNext()){
-//									samples.add(itr.next());
-//								}
-//							}
-//						}
-//						Object[] samples_arr = new Object[samples.size()];
-//						Object[] temp = samples.toArray();
-//						for(int ii=0;ii<samples_arr.length;ii++){
-//							samples_arr[ii] = temp[ii];
-//						}
-//						Estimator est = new Estimator(samples_arr);	
-//						System.out.println(" "+samples.size()+" "+est.chao92()+" "+est.sum()); //sum(*)
-//					}
-//				}
-				
-				//estimate population statistics from samples (method2)
+				//estimate population statistics from samples (method2: bucket)
 				for(int i=0;i<s_size.length;i++){
-					for(int j=0;j<n_itr.length;j++){
-						System.out.println("#worker: "+n_itr[j]);
-						ArrayList<Object> samples = new ArrayList<Object>(); 
-						int idx= 0;
-						for(int jj=0;jj<n_itr[j];jj++){
-							for(int k=0;k<table_name.length;k++){
-								Object[] sample = db.sample(s_size[i]*3, p_size, table_name[k], sampling_type);
-								
-								//resampling: likelihood of individual to be selected
-								ArrayList<Object> resampled = db.resample(s_size[i], sample, dist);
-								
-								//worker arrival rates?
-								Iterator itr = resampled.iterator();
-								while(itr.hasNext()){
-									samples.add(itr.next());
-								}
-							}
-						}
-						for(int nbi=0;nbi<nbuckets.length;nbi++){
-							int[] cnts= new int[nbuckets[nbi]]; 
-							Object[][] buckets = new Object[nbuckets[nbi]][];;
-							for(Object s:samples){
-								if(s==null)
-									continue;
-								if(s instanceof Person){
-									int nc = ((Person) s).getCoffee();
-									cnts[nc%nbuckets[nbi]]++;
-								}
-								else if(s instanceof State){ 
-									int r = ((State) s).getRank();
-									cnts[r%nbuckets[nbi]]++;
-								}
-							}
-							for(int bi=0;bi<buckets.length;bi++){
-								buckets[bi]= new Object[cnts[bi]];
-							}
+					for(int cri=0;cri<lamda.length;cri++){
+						System.out.println("lamda: " + lamda[cri]);
+						for(int j=0;j<n_itr.length;j++){
+							System.out.println("#worker: "+n_itr[j]);
 							
-							int[] cnts2= new int[nbuckets[nbi]];
-							for(Object s:samples){
-								if(s==null)
-									continue;
-								if(s instanceof Person){
-									int nc = ((Person) s).getCoffee();
-									buckets[nc%nbuckets[nbi]][cnts2[nc%nbuckets[nbi]]++]= s;
-								}
-								else if(s instanceof State){
-									int r = ((State) s).getRank();
-									buckets[r%nbuckets[nbi]][cnts2[r%nbuckets[nbi]]++]= s;
+							ArrayList<Object> samples = new ArrayList<Object>(); 
+							for(int jj=0;jj<n_itr[j];jj++){
+								for(int k=0;k<table_name.length;k++){
+									Object[] sample = db.sample(s_size[i]*3, p_size, table_name[k], sampling_type);
+									
+									//resampling: likelihood of individual to be selected
+									//ArrayList<Object> resampled = db.resample(s_size[i], sample, dist);
+									ArrayList<Object> resampled = db.resample(s_size[i], sample, lamda[cri]);
+									
+									//worker arrival rates?
+									Iterator itr = resampled.iterator();
+									while(itr.hasNext()){
+										samples.add(itr.next());
+									}
 								}
 							}
-							Estimator[] ests= new Estimator[nbuckets[nbi]];
-							for(int ei=0;ei<ests.length;ei++){
-								ests[ei] = new Estimator(buckets[ei]);
-							}					
+							for(int nbi=0;nbi<nbuckets.length;nbi++){
+								int[] cnts= new int[nbuckets[nbi]]; 
+								Object[][] buckets = new Object[nbuckets[nbi]][];;
+								for(Object s:samples){
+									if(s==null)
+										continue;
+									if(s instanceof Person){
+										int nc = ((Person) s).getCoffee();
+										cnts[nc%nbuckets[nbi]]++;
+									}
+									else if(s instanceof State){ 
+										int r = ((State) s).getRank();
+										cnts[r%nbuckets[nbi]]++;
+									}
+								}
+								for(int bi=0;bi<buckets.length;bi++){
+									buckets[bi]= new Object[cnts[bi]];
+								}
+								
+								int[] cnts2= new int[nbuckets[nbi]];
+								for(Object s:samples){
+									if(s==null)
+										continue;
+									if(s instanceof Person){
+										int nc = ((Person) s).getCoffee();
+										buckets[nc%nbuckets[nbi]][cnts2[nc%nbuckets[nbi]]++]= s;
+									}
+									else if(s instanceof State){
+										int r = ((State) s).getRank();
+										buckets[r%nbuckets[nbi]][cnts2[r%nbuckets[nbi]]++]= s;
+									}
+								}
+								Estimator[] ests= new Estimator[nbuckets[nbi]];
+								for(int ei=0;ei<ests.length;ei++){
+									ests[ei] = new Estimator(buckets[ei]);
+								}					
 
-							System.out.print(""+nbuckets[nbi]+" "+samples.size());
-							for(int pi=0;pi<ests.length;pi++){
-								System.out.print(" "+cnts[pi]+" "+ests[pi].sum()); //count(*)	
+								System.out.print(""+nbuckets[nbi]+" "+samples.size());
+								for(int pi=0;pi<ests.length;pi++){
+									System.out.print(" "+cnts[pi]+" "+ests[pi].sum()); //count(*)	
+								}
+								System.out.println();
 							}
-							System.out.println();
 						}
 					}
 				}

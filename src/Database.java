@@ -72,6 +72,10 @@ public class Database {
 		preparedStatement.execute();
 	}
 	
+	public void insert(String table, HIT h) throws SQLException{
+		
+	}
+	
 	public Object[] sample(int s_size, int p_size, String table, int type) throws SQLException {
 		Object[] result = new Object[s_size];
 		statement = connect.createStatement();
@@ -143,15 +147,48 @@ public class Database {
 			int idx = r.nextInt(sample.length); //choose a sample
 			if(sample[idx] instanceof Person){
 				Person p = (Person) sample[idx];
-				if(p != null && !map.containsKey(""+idx) && r.nextInt(10)<7+dist[p.getCoffee()]){
+				if(p != null && !map.containsKey(""+idx) 
+						&& r.nextInt(10) < 7+dist[p.getCoffee()]){
 					resampled.add(p);
 					map.put(""+idx,""+0);
 					cnt++;
 				}
 			}
 			else if(sample[idx] instanceof State){
+				//lamb * Math.exp(-1*lamb*)
 				State s = (State) sample[idx];
-				if(s != null && !map.containsKey(""+idx) && (r.nextInt(50)+20)>dist[s.getRank()-1]){
+				if(s != null && !map.containsKey(""+idx) 
+						&& (r.nextInt(50) + 20 > dist[s.getRank()-1])){
+					resampled.add(s);
+					map.put(""+idx,""+0);
+					cnt++;
+				}
+			}
+		}
+		
+		return resampled;
+	}
+	
+	/**
+	 * likelihood for an individual to be selected
+	 * @param s_size
+	 * @param sample
+	 * @return
+	 */
+	public ArrayList<Object> resample(int s_size, Object[] sample, double lamda){
+		ArrayList<Object> resampled = new ArrayList<Object>();
+		HashMap<String,String> map = new HashMap<String,String>();
+		//correlation: "coffee lovers are more likely to respond."
+		Random r = new Random();
+		
+		int cnt=0;
+		while(cnt < s_size){
+			int idx = r.nextInt(sample.length); //choose a sample
+			if(sample[idx] instanceof State){
+				//lamb * Math.exp(-1*lamb*)
+				State s = (State) sample[idx];
+				if(s != null && !map.containsKey(""+idx) 
+						&& (r.nextDouble() > (lamda*Math.exp(-1*(s.getRank()-1)*lamda)))){
 					resampled.add(s);
 					map.put(""+idx,""+0);
 					cnt++;
