@@ -34,32 +34,14 @@ public class Database {
 		}
 	}
 	
-	public void createCoffeeTable(String table) throws SQLException {
-		try{
-			statement.execute("create table " + table + " (id int, age int, coffee int)");
-		}
-		catch(SQLException se){
-			se.printStackTrace();
-		}
-	}
-	
 	public void createGDPTable(String table) throws SQLException {
-		try{
-			statement.execute("create table " + table + " (name varchar(20), rank int, gdp int)");
-		}
-		catch(SQLException se){
-			se.printStackTrace();
-		}
+		statement.execute("create table " + table + " (name varchar(20), rank int, gdp int)");	
 	}
 	
-	public void insert(String table, Person s) throws SQLException{
-		//preparedStatements can use variables and are more efficient
-		preparedStatement = connect
-				.prepareStatement("insert into " + table + " values (?, ?, ?)");
-		preparedStatement.setInt(1, s.getID());
-		preparedStatement.setInt(2, s.getAge());
-		preparedStatement.setInt(3, s.getCoffee());
-		preparedStatement.execute();
+	public void createHITTable(String table) throws SQLException {
+		statement.execute("create table " + table + 
+				" (assign_id varchar(30), worker_id varchar(30), hit_id varchar(30)"
+				+ ", accept_t bigint, state varchar(20), gdp int)");
 	}
 	
 	public void insert(String table, State s) throws SQLException{
@@ -73,7 +55,47 @@ public class Database {
 	}
 	
 	public void insert(String table, HIT h) throws SQLException{
+		preparedStatement = connect
+				.prepareStatement("insert into " + table + " values (?, ?, ?, ?, ?, ?)");
+		preparedStatement.setString(1, h.getAssignID());
+		preparedStatement.setString(2, h.getWorkerID());
+		preparedStatement.setString(3, h.getHITId());
+		preparedStatement.setLong(4, h.getAcceptTime());
+		preparedStatement.setString(5, h.getState());
+		preparedStatement.setInt(6, h.getGDP());
+		preparedStatement.execute();
+	}
+	
+	/**
+	 * hard-coded query execution
+	 * @param query
+	 * @throws SQLException 
+	 */
+	public void queryExec(String query) throws SQLException{
+		statement = connect.createStatement();
+		statement.execute(query);
+	}
+	
+	public Object[] sampleAMT(int s_size, int p_size, String table) throws SQLException {
+		Object[] result = new Object[s_size];
+		statement = connect.createStatement();
 		
+		String query = "select * from " + table + " order by accept_t limit " + s_size;
+		resultSet = statement.executeQuery(query);
+		
+		int idx= 0;
+		while(resultSet.next()){
+			String assign_id = resultSet.getString("assign_id");
+			String worker_id = resultSet.getString("worker_id");
+			String hit_id = resultSet.getString("hit_id");
+			long accept_t = resultSet.getLong("accept_t");
+			String state = resultSet.getString("state");
+			int gdp = resultSet.getInt("gdp");
+			String[] ids = {assign_id, worker_id, hit_id};
+			result[idx++] = new HIT(ids, accept_t, state, gdp);
+		}
+		
+		return result;
 	}
 	
 	public Object[] sample(int s_size, int p_size, String table, int type) throws SQLException {
@@ -86,87 +108,27 @@ public class Database {
 			for(int i=0;i<s_size;i++){
 				statement.execute("insert temp select rand()*"+p_size +"+ 1");
 			}
-			String query = "select * from " + table + " s join temp r on s.id = r.idx";
-			resultSet = statement.executeQuery(query);
-		}
-		//sampling with replacement
-		if(type == 3){
-			statement.execute("create table temp (idx int)");
-			for(int i=0;i<s_size;i++){
-				statement.execute("insert temp select rand()*"+p_size +"+ 1");
-			}
 			String query = "select * from " + table + " s join temp r on s.rank = r.idx";
 			resultSet = statement.executeQuery(query);
-		}		
-		if(type == 2 || type == 4){
+		}	
+		if(type == 2){
 			//SELECT * FROM table ORDER BY RAND() LIMIT 10000
 			String query = "select * from " + table + " order by rand() limit " + s_size;
 			resultSet = statement.executeQuery(query);
 		}
 		
-		if(type == 1 || type == 2){
-			int idx= 0;
-			while(resultSet.next()){
-				int id = resultSet.getInt("id");
-				int age = resultSet.getInt("age");
-				int coffee = resultSet.getInt("coffee");
-				result[idx++] = new Person(id, age, coffee);
-			}
+		int idx= 0;
+		while(resultSet.next()){
+			String name = resultSet.getString("name");
+			int rank = resultSet.getInt("rank");
+			int gdp = resultSet.getInt("gdp");
+			result[idx++] = new State(name, rank, gdp);
 		}
-		
-		if(type == 3 || type == 4){
-			int idx= 0;
-			while(resultSet.next()){
-				String name = resultSet.getString("name");
-				int rank = resultSet.getInt("rank");
-				int gdp = resultSet.getInt("gdp");
-				result[idx++] = new State(name, rank, gdp);
-			}
-		}
-		
-		if(type == 1 || type == 3)
+		if(type == 1){
 			statement.execute("drop table temp");
+		}
 		
 		return result;
-	}
-	
-	/**
-	 * likelihood for an individual to be selected
-	 * @param s_size
-	 * @param sample
-	 * @return
-	 */
-	public ArrayList<Object> resample(int s_size, Object[] sample, int[] dist){
-		ArrayList<Object> resampled = new ArrayList<Object>();
-		HashMap<String,String> map = new HashMap<String,String>();
-		//correlation: "coffee lovers are more likely to respond."
-		Random r = new Random();
-		
-		int cnt=0;
-		while(cnt < s_size){
-			int idx = r.nextInt(sample.length); //choose a sample
-			if(sample[idx] instanceof Person){
-				Person p = (Person) sample[idx];
-				if(p != null && !map.containsKey(""+idx) 
-						&& r.nextInt(10) < 7+dist[p.getCoffee()]){
-					resampled.add(p);
-					map.put(""+idx,""+0);
-					cnt++;
-				}
-			}
-			else if(sample[idx] instanceof State){
-				//lamb * Math.exp(-1*lamb*)
-				State s = (State) sample[idx];
-				if(s != null && !map.containsKey(""+idx) 
-						&& (r.nextInt(50) + 20 > dist[s.getRank()-1])){
-					resampled.add(s);
-					map.put(""+idx,""+0);
-					cnt++;
-				}
-			}
-		}
-		
-		return resampled;
 	}
 	
 	/**
@@ -197,52 +159,6 @@ public class Database {
 		}
 		
 		return resampled;
-	}
-	
-	public Person[] selectAll(String from) throws SQLException {
-		statement = connect.createStatement();
-		resultSet = statement.executeQuery("select count(*) from " + from);
-		resultSet.next();
-		int n = resultSet.getInt(resultSet.getMetaData().getColumnName(1));
-		Person[] people = new Person[n];
-		
-		resultSet = statement.executeQuery("select * from " + from);
-		int idx= 0;
-		while(resultSet.next()){
-			int id = resultSet.getInt("id");
-			int age = resultSet.getInt("age");
-			int coffee = resultSet.getInt("coffee");
-			people[idx++] = new Person(id, age, coffee);
-		}
-		
-		return people;
-	}
-	
-	public Person[] union(String[] tables) throws SQLException {
-		statement = connect.createStatement(); 
-		resultSet = statement.executeQuery("select count(*) from " + tables[0]);
-		resultSet.next();
-		int n = resultSet.getInt(1);
-		
-		String query = "select * from "+tables[0];
-		for(int i=1;i<tables.length;i++){
-			query += " union all select * from " + tables[i];
-			resultSet = statement.executeQuery("select count(*) from " + tables[i]);
-			resultSet.next();
-			n += resultSet.getInt(1);
-		}
-		Person[] people = new Person[n];
-		
-		resultSet = statement.executeQuery(query); 
-		int idx = 0;
-		while(resultSet.next()){
-			int id = resultSet.getInt("id");
-			int age = resultSet.getInt("age");
-			int coffee = resultSet.getInt("coffee");
-			people[idx++] = new Person(id, age, coffee);
-		}
-		
-		return people;
 	}
 	
 	public void writeMetaData(ResultSet resultSet) throws SQLException{

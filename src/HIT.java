@@ -1,32 +1,29 @@
 
 public class HIT {
 
-	private String key;
-	private String val;
+	private String state;
+	private int rank;
+	private int gdp;
 	private String assignID;
 	private String workerID;
 	private String HITId;
 	private long acceptTime;
-	private long submitTime;
-	private long timeToComplete;
 	
-	public HIT(String[] ids, long[] times, String key, String val){
-		this.key = key;
-		this.val = val;
+	public HIT(String[] ids, long time, String state, int gdp){
+		this.state = state;
+		this.gdp = gdp;
 		this.assignID = ids[0];
 		this.workerID = ids[1];
 		this.HITId = ids[2];
-		this.acceptTime = times[0];
-		this.submitTime = times[1];
-		this.timeToComplete = times[2];
+		this.acceptTime = time;
 	}
 	
-	public String getKey(){
-		return key;
+	public String getState(){
+		return state;
 	}
 	
-	public String getVal(){
-		return val;
+	public int getGDP(){
+		return gdp;
 	}
 	
 	public String getAssignID(){
@@ -45,11 +42,7 @@ public class HIT {
 		return acceptTime;
 	}
 	
-	public long getSubmitTIme(){
-		return submitTime;
-	}
-	
-	public long getTimeToComplete(){
-		return timeToComplete;
+	public int getRank(){
+		return rank;
 	}
 }
