@@ -8,6 +8,28 @@ import java.util.Iterator;
 // https://github.com/yeounoh/Query-Estimation.git
 public class Main {
 	
+	/**
+	 * Create a base table of distinct samples from a uniform distribution.
+	 * This can be later resampled (under/over) to populate samples of interest.
+	 */
+	public static Database genUniform(String db_name, String table_name, boolean do_gen) throws Exception{
+		Database db = new Database();
+		db.connect(db_name);
+	
+		// create a base table (to be resampled) from a uniform distribution.
+		if(do_gen){
+			db.drop();
+			db.connect(db_name);
+			DataGenerator gen = new DataGenerator();
+	
+			//uniform
+			db.createGDPTable(table_name); 
+			gen.genUniform(db, table_name);
+		}
+		
+		return db;
+	}
+	
 	public static Database genGDPwiki(String db_name, String table_name, boolean do_gen) throws Exception{
 		Database db = new Database();
 		db.connect(db_name);
@@ -21,7 +43,7 @@ public class Main {
 			//Wikipedia
 			db.createGDPTable(table_name); 
 			gen.loadGDPwiki(db, table_name);
-			System.out.println("sum for " + table_name + " is 14387583"); //ground truth
+			//System.out.println("sum for " + table_name + " is 14387583"); //ground truth
 		}
 		
 		return db;
@@ -58,9 +80,11 @@ public class Main {
 	
 	public static void main(String[] args){
 		try{
-			boolean gdp_amt = true;
+			boolean gdp_amt = false;
 			boolean gdp_wiki = false;
+			boolean uniform = true;
 			
+			// real data sets
 			if(gdp_amt){
 				//database configuration-2
 				String db_name = "gdp";
@@ -79,13 +103,13 @@ public class Main {
 				int bucket_type = 2; //1- equi-range, 2- equi-size
 				
 				//file writer				
-				FileOutputStream fos1= new FileOutputStream("./result/amt_naive.txt");
+				FileOutputStream fos1= new FileOutputStream("./result/"+table_name+"_naive.txt");
 				BufferedWriter bw1= new BufferedWriter(new OutputStreamWriter(fos1));
-				FileOutputStream fos2= new FileOutputStream("./result/amt_bucket_type"+bucket_type+"_est.txt");
+				FileOutputStream fos2= new FileOutputStream("./result/"+table_name+"_bucket_type"+bucket_type+"_est.txt");
 				BufferedWriter bw2= new BufferedWriter(new OutputStreamWriter(fos2));
-				FileOutputStream fos3= new FileOutputStream("./result/amt_bucket_type"+bucket_type+"_cnt.txt");
+				FileOutputStream fos3= new FileOutputStream("./result/"+table_name+"_bucket_type"+bucket_type+"_cnt.txt");
 				BufferedWriter bw3= new BufferedWriter(new OutputStreamWriter(fos3));
-				FileOutputStream fos4= new FileOutputStream("./result/amt_bucket_type"+bucket_type+"_chao.txt");
+				FileOutputStream fos4= new FileOutputStream("./result/"+table_name+"_bucket_type"+bucket_type+"_chao.txt");
 				BufferedWriter bw4= new BufferedWriter(new OutputStreamWriter(fos4));
 				bw1.write("#|n|chao92|sum|sum_f1|sum_f12|"); bw1.flush(); bw1.newLine();
 				bw2.write("#|nbucket|n|sum|"); bw2.flush(); bw2.newLine();
@@ -200,40 +224,58 @@ public class Main {
 				bw1.close(); bw2.close(); bw3.close(); bw4.close();
 			}
 			
-			if(gdp_wiki){
+			// synthetic data sets
+			if(gdp_wiki || uniform){
 				//database configuration-2
-				String db_name = "gdp";
-				String table_name = "wiki"; 
-				int p_size = 50; // ground truth (# of species, S)
-				
 				boolean do_gen = true;
-				Database db = genGDPwiki(db_name, table_name, do_gen);
+				String db_name = null;
+				String table_name = null; 
+				int p_size = 0; // ground truth (# of species, S)
+				Database db = null;
+				
+				if(gdp_wiki){
+					db_name = "gdp";
+					table_name = "wiki"; 
+					p_size = 50; // ground truth (# of species, S)
+					db = genGDPwiki(db_name, table_name, do_gen);
+				}
+				else if(uniform){
+					db_name = "synthetic";
+					table_name = "uniform"; 
+					p_size = 100;
+					db = genUniform(db_name, table_name, do_gen);
+				}
 				 
 				//experiment configuration
 				int[] s_size = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25}; 
 				int[] n_worker = {20}; // number of workers
 				int sampling_type = 2; //Sampling method: 1- with replacement, 2- without replacement
-				int[] nbuckets = {1, 2, 3, 4, 5};
-				int bucket_type = 1; //1- equi-range, 2- equi-size
-				double[] lamda = {0.5}; //correlation factor
+				int[] nbuckets = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+				int bucket_type = 2; //1- equi-range, 2- equi-size
+				int bucket_max_width = 0;
+				if(gdp_wiki)
+					bucket_max_width = 2000000; //GDP2009: 2000000, GDP2012: 2500000
+				else if(uniform)
+					bucket_max_width = 100; 
+				double[] lamda = {0.1, 0.5, 1.0}; //correlation factor
 				
 				//file writer				
-				FileOutputStream fos1= new FileOutputStream("./result/wiki_naive.txt");
+				FileOutputStream fos1= new FileOutputStream("./result/"+table_name+"_naive.txt");
 				BufferedWriter bw1= new BufferedWriter(new OutputStreamWriter(fos1));
-				FileOutputStream fos1r= new FileOutputStream("./result/wiki_naive_rep.txt");
+				FileOutputStream fos1r= new FileOutputStream("./result/"+table_name+"_naive_rep.txt");
 				BufferedWriter bw1r= new BufferedWriter(new OutputStreamWriter(fos1r));
-				FileOutputStream fos1r_f1= new FileOutputStream("./result/wiki_estf1_rep.txt");
+				FileOutputStream fos1r_f1= new FileOutputStream("./result/"+table_name+"_estf1_rep.txt");
 				BufferedWriter bw1r_f1= new BufferedWriter(new OutputStreamWriter(fos1r_f1));
-				FileOutputStream fos1r_f12= new FileOutputStream("./result/wiki_estf12_rep.txt");
+				FileOutputStream fos1r_f12= new FileOutputStream("./result/"+table_name+"_estf12_rep.txt");
 				BufferedWriter bw1r_f12= new BufferedWriter(new OutputStreamWriter(fos1r_f12));
 				
-				FileOutputStream fos2= new FileOutputStream("./result/wiki_bucket_type"+bucket_type+"_est.txt");
+				FileOutputStream fos2= new FileOutputStream("./result/"+table_name+"_bucket_type"+bucket_type+"_est.txt");
 				BufferedWriter bw2= new BufferedWriter(new OutputStreamWriter(fos2));
-				FileOutputStream fos3= new FileOutputStream("./result/wiki_bucket_type"+bucket_type+"_cnt.txt");
+				FileOutputStream fos3= new FileOutputStream("./result/"+table_name+"_bucket_type"+bucket_type+"_cnt.txt");
 				BufferedWriter bw3= new BufferedWriter(new OutputStreamWriter(fos3));
-				FileOutputStream fos4= new FileOutputStream("./result/wiki_bucket_type"+bucket_type+"_chao.txt");
+				FileOutputStream fos4= new FileOutputStream("./result/"+table_name+"_bucket_type"+bucket_type+"_chao.txt");
 				BufferedWriter bw4= new BufferedWriter(new OutputStreamWriter(fos4));
-				FileOutputStream fos5= new FileOutputStream("./result/wiki_bucket_type"+bucket_type+"_rep.txt");
+				FileOutputStream fos5= new FileOutputStream("./result/"+table_name+"_bucket_type"+bucket_type+"_rep.txt");
 				BufferedWriter bw5= new BufferedWriter(new OutputStreamWriter(fos5));
 				bw1.write("#|lam|nworker|n|chao92|sum|sum_f1|sum_f12|"); bw1.flush(); bw1.newLine();
 				bw1r.write("#|lam|nworker|n|avg|std|"); bw1r.flush(); bw1r.newLine();
@@ -340,7 +382,7 @@ public class Main {
 									
 									//equi-range bucket
 									if(bucket_type == 1){
-										int width = 2000000/buckets.length; //GDP2009- 2000000, GDP2012- 2500000
+										int width = bucket_max_width/buckets.length; 
 										for(int ii=0;ii<nbuckets[nbi];ii++){ 
 											buckets[ii] = new Bucket(ii*width, (ii+1)*width);
 										}
@@ -407,9 +449,9 @@ public class Main {
 										cnt_t += cnt_by_bucket[i][j][k] + " ";
 										chao_t += chao_by_bucket[i][j][k] + " ";
 									} 
-									bw2.write(""+lamda[cri]+" "+n_worker[wi]+" "+nbuckets[j]+" "+s_size[i]+" "+sum_t);
-									bw3.write(""+lamda[cri]+" "+n_worker[wi]+" "+nbuckets[j]+" "+s_size[i]+" "+cnt_t);
-									bw4.write(""+lamda[cri]+" "+n_worker[wi]+" "+nbuckets[j]+" "+s_size[i]+" "+chao_t);
+									bw2.write(""+lamda[cri]+" "+n_worker[wi]+" "+nbuckets[j]+" "+(s_size[i]*n_worker[wi])+" "+sum_t);
+									bw3.write(""+lamda[cri]+" "+n_worker[wi]+" "+nbuckets[j]+" "+(s_size[i]*n_worker[wi])+" "+cnt_t);
+									bw4.write(""+lamda[cri]+" "+n_worker[wi]+" "+nbuckets[j]+" "+(s_size[i]*n_worker[wi])+" "+chao_t);
 									bw2.flush(); bw2.newLine();
 									bw3.flush(); bw3.newLine();
 									bw4.flush(); bw4.newLine();

@@ -16,12 +16,15 @@ public class Database {
 		try{
 			this.db_name = database;
 			
+			//password: /usr/local/mysql/bin/mysqladmin -u root password NEW_PASSWORD_HERE
+			String pwd = ""; //by default
+			
 			//each DB has its own driver
 			Class.forName("com.mysql.jdbc.Driver");
 			
 			//setup the connection with the DB
 			connect = DriverManager.getConnection("jdbc:mysql://localhost/?"
-					+ "user=root&password=asdf");
+					+ "user=root&password=" + pwd);
 			statement = connect.createStatement();
 			statement.execute("use " + database);
 		}

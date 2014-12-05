@@ -16,6 +16,17 @@ import java.util.Random;
 
 public class DataGenerator {
 	
+	//generate samples from a uniform distribution: 100 samples values ranging from 1 to 100.
+	public int genUniform(Database db, String table) throws SQLException, IOException {
+		int cnt = 100;
+		for(int i=0;i<cnt;i++){
+			State s = new State(""+i,cnt-i,i);
+			db.insert(table, s);
+		}
+		
+		return cnt;
+	}
+	
 	//Wikipedia example
 	public int loadGDPwiki(Database db, String table) throws SQLException, IOException {
 		String input = "C:\\Users\\user\\workspace\\Query Estimation\\data\\gdp_us.csv";
@@ -29,7 +40,7 @@ public class DataGenerator {
 		
 		int cnt = 0;
 		while((line = br.readLine())!=null){
-			//Wikipedia Examplge (obsolete)
+			// State(String name, int rank, int gdp)
 			String[] tokens = line.split(",");
 			State s = new State(tokens[0].substring(1), Integer.parseInt(tokens[1]), Integer.parseInt(tokens[2]));
 			db.insert(table, s);
