@@ -16,15 +16,12 @@ public class Database {
 		try{
 			this.db_name = database;
 			
-			//password: /usr/local/mysql/bin/mysqladmin -u root password NEW_PASSWORD_HERE
-			String pwd = ""; //by default
-			
 			//each DB has its own driver
 			Class.forName("com.mysql.jdbc.Driver");
 			
 			//setup the connection with the DB
 			connect = DriverManager.getConnection("jdbc:mysql://localhost/?"
-					+ "user=root&password=" + pwd);
+					+ "user=root&password=");
 			statement = connect.createStatement();
 			statement.execute("use " + database);
 		}
@@ -138,6 +135,7 @@ public class Database {
 	 * likelihood for an individual to be selected
 	 * @param s_size
 	 * @param sample
+	 * @param lamda 
 	 * @return
 	 */
 	public ArrayList<Object> resample(int s_size, Object[] sample, double lamda){
@@ -153,7 +151,7 @@ public class Database {
 				//lamb * Math.exp(-1*lamb*)
 				State s = (State) sample[idx];
 				if(s != null && !map.containsKey(""+idx) 
-						&& (r.nextDouble() > (lamda*Math.exp(-1*(s.getRank()-1)*lamda)))){
+						&& (r.nextDouble() < (lamda*Math.exp(-1*(s.getRank()-1)*lamda/50)))){
 					resampled.add(s);
 					map.put(""+idx,""+0);
 					cnt++;
