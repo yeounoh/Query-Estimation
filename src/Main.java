@@ -210,7 +210,7 @@ public class Main {
 				Database db = genGDPwiki(db_name, table_name, do_gen);
 				 
 				//experiment configuration
-				int n_rep = 20;
+				int n_rep = 100;
 				int[] s_size = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25}; 
 				int[] n_worker = {20}; // number of workers
 				int sampling_type = 2; //Sampling method: 1- with replacement, 2- without replacement
