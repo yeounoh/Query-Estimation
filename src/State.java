@@ -1,10 +1,10 @@
 
 public class State {
-	private String name;
-	private int rank; //unique id
-	private int gdp;
+	private String name; //unique id
+	private int rank; //rank by gdp, can be used as a unique id (~#states)
+	private double gdp;
 	
-	public State(String name, int rank, int gdp){
+	public State(String name, int rank, double gdp){
 		this.name = name;
 		this.rank = rank;
 		this.gdp = gdp;
@@ -18,7 +18,7 @@ public class State {
 		return rank;
 	}
 	
-	public int getGDP(){
+	public double getGDP(){
 		return gdp;
 	}
 }

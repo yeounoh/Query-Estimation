@@ -34,14 +34,14 @@ public class Database {
 		}
 	}
 	
-	public void createGDPTable(String table) throws SQLException {
-		statement.execute("create table " + table + " (name varchar(20), rank int, gdp int)");	
+	public void createSyntTable(String table) throws SQLException {
+		statement.execute("create table " + table + " (name char(50), rank int, value double not null)");	
 	}
 	
 	public void createHITTable(String table) throws SQLException {
 		statement.execute("create table " + table + 
-				" (assign_id varchar(30), worker_id varchar(30), hit_id varchar(30)"
-				+ ", accept_t bigint, state varchar(20), gdp int)");
+				" (assign_id char(30), worker_id char(30), hit_id char(30)"
+				+ ", accept_t bigint, name char(50), value double)");
 	}
 	
 	public void insert(String table, State s) throws SQLException{
@@ -50,8 +50,9 @@ public class Database {
 				.prepareStatement("insert into " + table + " values (?, ?, ?)");
 		preparedStatement.setString(1, s.getName());
 		preparedStatement.setInt(2, s.getRank());
-		preparedStatement.setInt(3, s.getGDP());
+		preparedStatement.setDouble(3, s.getGDP());
 		preparedStatement.execute();
+		preparedStatement.clearParameters();
 	}
 	
 	public void insert(String table, HIT h) throws SQLException{
@@ -61,9 +62,10 @@ public class Database {
 		preparedStatement.setString(2, h.getWorkerID());
 		preparedStatement.setString(3, h.getHITId());
 		preparedStatement.setLong(4, h.getAcceptTime());
-		preparedStatement.setString(5, h.getState());
-		preparedStatement.setInt(6, h.getGDP());
-		preparedStatement.execute();
+		preparedStatement.setString(5, h.getName());
+		preparedStatement.setDouble(6, h.getValue());
+		preparedStatement.execute(); 
+		preparedStatement.clearParameters();
 	}
 	
 	/**
@@ -76,7 +78,7 @@ public class Database {
 		statement.execute(query);
 	}
 	
-	public Object[] sampleAMT(int s_size, int p_size, String table) throws SQLException {
+	public Object[] sampleAMT(int s_size, String table) throws SQLException {
 		Object[] result = new Object[s_size];
 		statement = connect.createStatement();
 		
@@ -89,29 +91,38 @@ public class Database {
 			String worker_id = resultSet.getString("worker_id");
 			String hit_id = resultSet.getString("hit_id");
 			long accept_t = resultSet.getLong("accept_t");
-			String state = resultSet.getString("state");
-			int gdp = resultSet.getInt("gdp");
+			String name = resultSet.getString("name");
+			double value = resultSet.getDouble("value"); 
+			//Double d = resultSet.getObject(6) != null ? 1.0 : null; System.out.println(d);
 			String[] ids = {assign_id, worker_id, hit_id};
-			result[idx++] = new HIT(ids, accept_t, state, gdp);
+			result[idx++] = new HIT(ids, accept_t, name, value);
 		}
 		
 		return result;
 	}
-	
-	public Object[] sample(int s_size, int p_size, String table, int type) throws SQLException {
+	/**
+	 * this is for synthetic data set.
+	 * @param s_size
+	 * @param p_size
+	 * @param table
+	 * @param sampling_type 1 - with replacement, 2 - without replacment
+	 * @return
+	 * @throws SQLException
+	 */
+	public Object[] sample(int s_size, int n_class, String table, int sampling_type) throws SQLException {
 		Object[] result = new Object[s_size];
 		statement = connect.createStatement();
 		
 		//sampling with replacement
-		if(type == 1){
+		if(sampling_type == 1){
 			statement.execute("create table temp (idx int)");
 			for(int i=0;i<s_size;i++){
-				statement.execute("insert temp select rand()*"+p_size +"+ 1");
+				statement.execute("insert temp select rand()*"+n_class +"+ 1");
 			}
 			String query = "select * from " + table + " s join temp r on s.rank = r.idx";
 			resultSet = statement.executeQuery(query);
 		}	
-		if(type == 2){
+		if(sampling_type == 2){
 			//SELECT * FROM table ORDER BY RAND() LIMIT 10000
 			String query = "select * from " + table + " order by rand() limit " + s_size;
 			resultSet = statement.executeQuery(query);
@@ -121,10 +132,11 @@ public class Database {
 		while(resultSet.next()){
 			String name = resultSet.getString("name");
 			int rank = resultSet.getInt("rank");
-			int gdp = resultSet.getInt("gdp");
-			result[idx++] = new State(name, rank, gdp);
+			int value = resultSet.getInt("value");
+			result[idx++] = new State(name, rank, value);
 		}
-		if(type == 1){
+		
+		if(sampling_type == 1){
 			statement.execute("drop table temp");
 		}
 		
@@ -133,12 +145,13 @@ public class Database {
 	
 	/**
 	 * likelihood for an individual to be selected
+	 * *this is for synthetic dataset
 	 * @param s_size
 	 * @param sample
 	 * @param lamda 
 	 * @return
 	 */
-	public ArrayList<Object> resample(int s_size, Object[] sample, double lamda){
+	public ArrayList<Object> resample(int s_size, Object[] sample, double lamda, int n_class){
 		ArrayList<Object> resampled = new ArrayList<Object>();
 		HashMap<String,String> map = new HashMap<String,String>();
 		//correlation: "coffee lovers are more likely to respond."
@@ -149,9 +162,9 @@ public class Database {
 			int idx = r.nextInt(sample.length); //choose a sample
 			if(sample[idx] instanceof State){
 				//lamb * Math.exp(-1*lamb*)
-				State s = (State) sample[idx];
+				State s = (State) sample[idx]; 
 				if(s != null && !map.containsKey(""+idx) 
-						&& (r.nextDouble() < (lamda*Math.exp(-1*(s.getRank()-1)*lamda/50)))){
+						&& (r.nextDouble() < (Math.exp(-1*(s.getRank()-1)*lamda/n_class)))){
 					resampled.add(s);
 					map.put(""+idx,""+0);
 					cnt++;

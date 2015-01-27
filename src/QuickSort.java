@@ -5,7 +5,7 @@ public class QuickSort {
 		int i= left, j= right;
 		Object tmp;
 		if(arr[0] instanceof State){
-			int pivot = ((State) arr[(left + right) / 2]).getGDP();
+			double pivot = ((State) arr[(left + right) / 2]).getGDP();
 			
 			while(i <= j){
 				while(((State) arr[i]).getGDP() < pivot)
@@ -22,12 +22,12 @@ public class QuickSort {
 			}
 		}
 		else if(arr[0] instanceof HIT){
-			int pivot = ((HIT) arr[(left + right) / 2]).getGDP();
+			double pivot = ((HIT) arr[(left + right) / 2]).getValue();
 			
 			while(i <= j){
-				while(((HIT) arr[i]).getGDP() < pivot)
+				while(((HIT) arr[i]).getValue() < pivot)
 					i++;
-				while(((HIT) arr[j]).getGDP() > pivot)
+				while(((HIT) arr[j]).getValue() > pivot)
 					j--; 
 				if(i<=j){
 					tmp = arr[i];
