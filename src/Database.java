@@ -105,7 +105,7 @@ public class Database {
 	 * @param s_size
 	 * @param p_size
 	 * @param table
-	 * @param sampling_type 1 - with replacement, 2 - without replacment
+	 * @param sampling_type 1- with replacement, 2- without replacment
 	 * @return
 	 * @throws SQLException
 	 */

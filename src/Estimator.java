@@ -102,26 +102,29 @@ public class Estimator {
 		if(n == 0)
 			return 0;
 		
+		double cov = 1 - (double) f[0]/n; //f[0] = f_1
+		
 		double cv = 0.0;
-		double cov = 0.0;
-		
-		//compute coverage (good Turing Estimator)
-		cov = 1 - (double) f[0]/n; //f[0] = f_1
-		//compute CV
-		int sum = 0;
-		for(int i=0;i<c;i++){
-			sum += i*(i+1)*f[i];
+		if(cov == 0)
+			return c; //cv = Math.sqrt(n);
+		else if((n-1) == 0)
+			cv = Math.sqrt(n);
+		else{
+			int sum = 0;
+			for(int i=0;i<c;i++)
+				sum += i*(i+1)*f[i];
+			
+			cv = Math.max((double) c/cov*((double) sum/(double) n/(double) (n-1))-1, 0);
 		}
-		cv= Math.max((double) c/cov*((double) sum/(double) n/(double) (n-1))-1, 0);
-		
-		if(cv == 0 || cov == 0)
-			return chao84();
-		
+				
 		return (double) c/cov + n*(1-cov)/cov*cv;
 	}
 	
 	public double chao84(){
-		if(n < 2 || f[1] == 0)
+		if(n == 0)
+			return 0;
+		
+		if(f[1] == 0)
 			return c;
 		
 		return c+f[0]*f[0]/2/f[1];
@@ -132,12 +135,14 @@ public class Estimator {
 	public double sumf1(){
 		if(f[0]==0)
 			return c_sum;
+		
 		return (double) c_sum + f1_sum/(double) f[0] * (chao92() - c);
 	}
 	
 	public double sumf12(){
 		if((f[0]+f[1])==0)
 			return c_sum;
+		
 		return (double) c_sum  + f12_sum/(double) (f[0]+f[1]) * (chao92() - c);
 	}
 	
@@ -152,6 +157,7 @@ public class Estimator {
 	public double sampleCov() {
 		if(n == 0)
 			return 0;
+		
 		return 1 - (double) f[0]/n; //f[0] = f_1, f1_cnt?	
 	}
 	
@@ -159,25 +165,26 @@ public class Estimator {
 		if(n == 0)
 			return 0;
 		
-		double cv = 0.0;
-		double cov = 0.0;
+		double cov = 1 - (double) f[0]/n; //f[0] = f_1
 		
-		//compute coverage (good Turing Estimator)
-		cov = 1 - (double) f[0]/n; //f[0] = f_1
-		//compute CV
-		int sum = 0;
-		for(int i=0;i<c;i++){
-			sum += i*(i+1)*f[i];
+		double cv = 0.0;
+		if(cov == 0 || (n-1) == 0)
+			cv = Math.sqrt(n);
+		else{
+			int sum = 0;
+			for(int i=0;i<c;i++)
+				sum += i*(i+1)*f[i]; //because i is zero-indexed
+			
+			cv = Math.max((double) c/cov*((double) sum/(double) n/(double) (n-1))-1, 0); //System.out.println(""+cv+" "+((double) c/cov*((double) sum/(double) n/(double) (n-1))-1));
 		}
-		cv= Math.max((double) c/cov*((double) sum/(double) n/(double) (n-1))-1, 0);
-
+		
 		return cv;
 	}
 
 	/**
-	 * Find out the optimal ER-bucket number.
-	 * :use the average sample coverage b/c we want to do well on all of them (weigh by n?).
-	 * :too many buckets may cause overestimation.
+	 * Find out the optimal ER-bucket number -tackle each bucket separately.
+	 * 1) split more to reduce CV
+	 * 2) having too small C will overshoot
 	 * 
 	 * distributing samples to many buckets would help -> but, if there are too few samples in each bucket, we would overestimate.
 	 * 

@@ -281,7 +281,7 @@ public class Main {
 				 
 				//experiment configuration
 				int n_rep = 200;
-				int[] s_size = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25}; //{5,10,25,50,75,100,150,450}; {1,2,3,4,5,6,7,8,9,10,11,12,14,16,18,20,25};//
+				int[] s_size = {1,5,10,15,20,25,30,35,40,45,50};//{1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25}; //{5,10,25,50,75,100,150,450}; 
 				int[] n_worker = {20}; // number of workers
 				int sampling_type = synt_data_type == 2 ? 1 : 2; //1- with replacement, 2- without replacement
 				int[] nbuckets = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
@@ -327,7 +327,7 @@ public class Main {
 						double[][] estc_rep = new double[s_size.length][n_rep];
 						double[][] estcv_rep = new double[s_size.length][n_rep];
 						for(int rep=0;rep<n_rep;rep++){
-							System.out.println("Repetition #: "+rep);
+							System.out.print(".");
 							for(int i=0;i<s_size.length;i++){
 								ArrayList<Object> samples = new ArrayList<Object>(); 
 								for(int jj=0;jj<n_worker[j];jj++){
@@ -403,7 +403,7 @@ public class Main {
 						int bucket_sizes = bucket_type == 1? 1 : nbuckets.length;
 						int[] auto_b_size = new int[s_size.length];
 						for(int rep=0;rep<n_rep;rep++){
-							System.out.println("Repetition #: "+rep);
+							System.out.print(".");
 							//estimate population statistics from samples (method2: bucket)
 							
 							double[][][] est_by_bucket = new double[s_size.length][bucket_sizes][]; //sample size, bucket number, bucket idx

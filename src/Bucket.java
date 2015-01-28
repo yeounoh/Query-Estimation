@@ -87,18 +87,19 @@ public class Bucket {
 		if(n == 0)
 			return 0;
 		
-		double cv = 0.0;
-		double cov = 0.0;
+		double cov = 1 - (double) f[0]/n; //f[0] = f_1
 		
-		//compute coverage (good Turing Estimator)
-		cov = 1 - (double) f[0]/n; //f[0] = f_1
-		//compute CV
-		int sum = 0;
-		for(int i=0;i<c;i++){
-			sum += i*(i+1)*f[i];
+		double cv = 0.0;
+		if(cov == 0 || (n-1) == 0)
+			cv = Math.sqrt(n);
+		else{
+			int sum = 0;
+			for(int i=0;i<c;i++)
+				sum += i*(i+1)*f[i];
+			
+			cv = Math.max((double) c/cov*((double) sum/(double) n/(double) (n-1))-1, 0);
 		}
-		cv= Math.max((double) c/cov*((double) sum/(double) n/(double) (n-1))-1, 0);
-
+		
 		return cv;
 	}
 	
@@ -130,12 +131,10 @@ public class Bucket {
 				String k = ((State) s).getName(); //key attribute is used for f-statistics
 				if(!hist.containsKey(k)){
 					hist.put(k, new HistBar(v, v, 1));
-					f[0] = f[0]+1;
 				}
 				else{ 
 					HistBar bar = hist.get(k);
 					bar.setCount(bar.getCount() + 1);
-					f[bar.getCount()-1] = f[bar.getCount()-1]+1;
 					bar.setLowerB(v);
 					bar.setUpperB(v);
 					hist.put(k, bar);
@@ -146,17 +145,25 @@ public class Bucket {
 				String k = ((HIT)s).getName();
 				if(!hist.containsKey(k)){
 					hist.put(k, new HistBar(v, v, 1));
-					f[0] = f[0]+1;
 				}
 				else{ 
 					HistBar bar = hist.get(k);
 					bar.setCount(bar.getCount() + 1);
-					f[bar.getCount()-1] = f[bar.getCount()-1]+1;
 					bar.setLowerB(v);
 					bar.setUpperB(v);
 					hist.put(k, bar);
 				}
 			}
+			
+			int[] f = new int[this.samples.size()];
+			Collection<HistBar> col = hist.values();
+			Iterator<HistBar> itr = col.iterator();
+			while(itr.hasNext()){
+				HistBar bar = itr.next();
+				int cnt = bar.getCount();
+				f[cnt-1] = f[cnt-1]+1;
+			}
+			this.f = f;
 			c = hist.size();
 		}
 	}
