@@ -92,8 +92,6 @@ public class DataGenerator {
 		String line;
 		while((line = br.readLine())!=null){ 
 			String[] tokens = line.split(",");
-			if(tokens.length < 8)
-				continue;
 			
 			String[] ids = {tokens[0], tokens[1], tokens[2]};
 			

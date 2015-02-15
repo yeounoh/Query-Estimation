@@ -98,6 +98,10 @@ public class Estimator {
 		this.c = hist.size();
 	}
 	
+	public int getUniqueCount() {
+		return c;
+	}
+	
 	public double chao92(){
 		if(n == 0)
 			return 0;
@@ -132,15 +136,15 @@ public class Estimator {
 	
 	//if f-1 is the best indicator of the missing classes, and we have very skewed value distribution, then 
 	// value correction based on the statistics of the f-1 statistics might be better.
-	public double sumf1(){
-		if(f[0]==0)
+	public double sumf1(){ 
+		if(c == 0 || f[0] == 0)
 			return c_sum;
 		
 		return (double) c_sum + f1_sum/(double) f[0] * (chao92() - c);
 	}
 	
 	public double sumf12(){
-		if((f[0]+f[1])==0)
+		if(c == 0 || (f[0]+f[1]) == 0)
 			return c_sum;
 		
 		return (double) c_sum  + f12_sum/(double) (f[0]+f[1]) * (chao92() - c);
@@ -178,72 +182,122 @@ public class Estimator {
 			cv = Math.max((double) c/cov*((double) sum/(double) n/(double) (n-1))-1, 0); //System.out.println(""+cv+" "+((double) c/cov*((double) sum/(double) n/(double) (n-1))-1));
 		}
 		
-		return cv;
+		return Math.sqrt(cv);
 	}
 
 	/**
 	 * Find out the optimal ER-bucket number -tackle each bucket separately.
 	 * 1) split more to reduce CV
-	 * 2) having too small C will overshoot
+	 * 2) having too small C will overshoot? Having too few samples per bucket will overestimate
 	 * 
 	 * distributing samples to many buckets would help -> but, if there are too few samples in each bucket, we would overestimate.
 	 * 
-	 * @param threshold: minimum average sample coverage
+	 * In this method, we always split a bucket in halves.
+	 * 
+	 * @param thresh_c: minimum sample coverage (obsolete)
+	 * @param thresh_cv: minimum coefficient of variance 
 	 * @param sample: validation data samples
 	 * @return
 	 */
-	public Bucket[] autoBuckets(double threshold, ArrayList<Object> sample) {
+	public Bucket[] autoBuckets(double thresh_c, double thresh_cv, Object[] sample) {
+		int nbkt_prev = 0;
 		
-		Bucket[] buckets = {new Bucket(min, max)};
-		double avg = sampleCov();
-		double sum = sum();
+		ArrayList<Bucket> buckets = new ArrayList<Bucket>(); 
+		Bucket init_b = new Bucket(min,max);
 		
-		int nbucket = 1;
-		while(avg > threshold){
-			//System.out.println(""+ nbucket + " " + avg + " " + sum);
-			
-			nbucket++;
-			double range = (max - min)/nbucket;
-			buckets = new Bucket[nbucket];
-			for(int i=0;i<nbucket;i++){
-				buckets[i] = new Bucket(min+i*range, min+(i+1)*range);
-			}
-			
-			for(Object s:sample){
-				if(s==null)
-					continue;
-				if(s instanceof HIT){
-					double value = ((HIT) s).getValue();
-					for(Bucket b : buckets){
-						if(b.getLowerB() <= value && b.getUpperB() >= value){
-							b.insertSample(s);
-							break;
-						}
-					}
-				}
-				if(s instanceof State){
-					double value = ((State) s).getGDP();
-					for(Bucket b : buckets){
-						if(b.getLowerB() <= value && b.getUpperB() >= value){
-							b.insertSample(s);
-							break;
-						}
-					}
-				}
-			}
-			
-			avg = 0; sum= 0;
+		new QuickSort().quickSort(sample,0,sample.length-1);
+		for(Object s : sample){
+			init_b.insertSample(s);
+		} 
+		buckets.add(init_b);
+		
+		while(buckets.size() > nbkt_prev){
+			/**
+			//To monitor splitting processes
+			String desc = "";
 			for(Bucket b : buckets){
-				//avg += b.getSampleCov()/nbucket;
-				avg += b.getSampleCov()*((double) b.getCount()/(double) n); 
-				
-				Object[] samples_b = b.getSamples().toArray();
-				Estimator est = new Estimator(samples_b);
-				sum += est.sum();
-				//System.out.print(" "+(double) b.getCount()/(double) n + ":"+b.getSampleCov());
+				//desc += "["+ b.getLowerB() + "," + b.getUpperB()+"]"+b.getCoeffVar()+", "+b.getCount();
+				desc += "["+ b.getLowerB() + "," + b.getUpperB()+"] "+b.getCount();
 			}
+			System.out.println(desc);
+			*/
+			nbkt_prev = buckets.size(); 
+			ArrayList<Bucket> toAdd = new ArrayList<Bucket>();
+			Iterator<Bucket> itr = buckets.iterator();
+			while(itr.hasNext()){ 
+				Bucket b = itr.next();
+				
+				if(b.getCount() == 0){
+					itr.remove();
+					continue;
+				}
+				
+				//split the bucket if sample coverage is higher than the threshold
+				if(b.getUnique() > 3 && b.getCoeffVar() > thresh_cv){
+					Object[] samples_b = b.getSamples().toArray();
+					
+					//sort the samples
+					new QuickSort().quickSort(samples_b,0,samples_b.length-1);
+					
+					double lb = b.getLowerB();
+					double ub = b.getUpperB();
+					double split = 0.0;
+					ArrayList<Bucket> buckets_b = new ArrayList<Bucket>();
+					
+					split = (lb + ub)/2;
+					buckets_b.add(new Bucket(lb, split));
+					buckets_b.add(new Bucket(split, ub));
+					
+					for(int i=0;i<samples_b.length;i++){
+						Object s = samples_b[i];
+						double v = s instanceof State ? ((State) s).getGDP() : ((HIT) s).getValue();
+						if(v >= lb && v <= split)
+							buckets_b.get(0).insertSample(s);
+						else{
+							buckets_b.get(1).insertSample(s);
+						}
+					}
+					
+					double prev = buckets_b.get(0).sum() + buckets_b.get(1).sum();
+					for(Object ss : samples_b){
+						split = ss instanceof State ? ((State) ss).getGDP() : ((HIT) ss).getValue();
+						Bucket lbkt = new Bucket(lb,split);
+						Bucket rbkt = new Bucket(split,ub);
+						
+						for(int i=0;i<samples_b.length;i++){
+							Object s = samples_b[i];
+							double v = s instanceof State ? ((State) s).getGDP() : ((HIT) s).getValue();
+							if(v >= lb && v <= split)
+								lbkt.insertSample(s);
+							else
+								rbkt.insertSample(s);
+						}
+						
+						if(prev > lbkt.sum() + rbkt.sum()){
+							buckets_b.clear();
+							buckets_b.add(lbkt);
+							buckets_b.add(rbkt);
+							prev = lbkt.sum() + rbkt.sum();
+						}
+					}
+					
+					itr.remove();
+					toAdd.addAll(buckets_b);
+				}
+			}
+			
+			Iterator<Bucket> itr_add = toAdd.iterator();
+			while(itr_add.hasNext()){ 
+				Bucket b = itr_add.next();
+				
+				if(b.getCount() == 0){
+					itr_add.remove();
+				}
+			}
+			buckets.addAll(toAdd);
 		}
 		
-		return buckets;
+		Bucket[] output = new Bucket[buckets.size()];
+		return buckets.toArray(output);
 	}
 }

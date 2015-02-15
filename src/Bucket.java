@@ -13,11 +13,20 @@ public class Bucket {
 	private int[] f;
 	private int n;
 	private int c;
+	private int idx;
 	
 	public Bucket(double lb, double ub){
 		this.n = 0;
 		this.c = 0;
 		this.f = null;
+		this.lower_b = lb;
+		this.upper_b = ub;
+		this.samples = new HashMap<Integer,Object>();
+		this.hist = new HashMap<String,HistBar>();
+	}
+	
+	public Bucket(double lb, double ub, Object[] sample){
+		this.n = 0;
 		this.lower_b = lb;
 		this.upper_b = ub;
 		this.samples = new HashMap<Integer,Object>();
@@ -76,10 +85,18 @@ public class Bucket {
 		c = hist.size();
 	}
 	
+	public void setIdx(int i){
+		this.idx = i;
+	}
+	
+	public int getIdx(){
+		return idx;
+	}
+	
 	public double getSampleCov(){
 		if(n == 0)
 			return 0;
-		
+		//System.out.println(f[0]);
 		return 1-(double) f[0]/(double) n;
 	}
 	
@@ -100,11 +117,15 @@ public class Bucket {
 			cv = Math.max((double) c/cov*((double) sum/(double) n/(double) (n-1))-1, 0);
 		}
 		
-		return cv;
+		return Math.sqrt(cv);
 	}
 	
 	public int getCount(){
 		return n;
+	}
+	
+	public int getUnique(){
+		return c;
 	}
 	
 	public int getF1Count(){
@@ -119,16 +140,22 @@ public class Bucket {
 		return upper_b;
 	}
 	
+	public double sum(){
+		Estimator est = new Estimator(samples.values().toArray());
+		return est.sum();
+	}
+	
 	/**
-	 * int[] f must have been initialized via Bucket(object[] sample) call.
+	 * int[] f must have been initialized via Bucket(object[] sample) call? no
 	 * @param s: a sample
 	 */
 	public void insertSample(Object s){
 		if(s != null){
-			samples.put(new Integer(n++), s);
+			samples.put(new Integer(n++), s); 
 			if(s instanceof State){ 
 				double v = ((State) s).getGDP();
-				String k = ((State) s).getName(); //key attribute is used for f-statistics
+				String k = ((State) s).getName(); //key attribute is used for f-statistics 
+				
 				if(!hist.containsKey(k)){
 					hist.put(k, new HistBar(v, v, 1));
 				}
@@ -142,7 +169,7 @@ public class Bucket {
 			}
 			else if(s instanceof HIT){
 				double v = ((HIT) s).getValue();
-				String k = ((HIT)s).getName();
+				String k = ((HIT)s).getName(); 
 				if(!hist.containsKey(k)){
 					hist.put(k, new HistBar(v, v, 1));
 				}
@@ -164,7 +191,7 @@ public class Bucket {
 				f[cnt-1] = f[cnt-1]+1;
 			}
 			this.f = f;
-			c = hist.size();
+			c = hist.size(); 
 		}
 	}
 	

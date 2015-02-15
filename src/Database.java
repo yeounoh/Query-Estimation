@@ -93,7 +93,6 @@ public class Database {
 			long accept_t = resultSet.getLong("accept_t");
 			String name = resultSet.getString("name");
 			double value = resultSet.getDouble("value"); 
-			//Double d = resultSet.getObject(6) != null ? 1.0 : null; System.out.println(d);
 			String[] ids = {assign_id, worker_id, hit_id};
 			result[idx++] = new HIT(ids, accept_t, name, value);
 		}
