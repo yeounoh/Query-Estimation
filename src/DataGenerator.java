@@ -82,7 +82,7 @@ public class DataGenerator {
 			// 1~max integer values
 			int max = 100;
 			for(int i=0;i<max;i++){
-				DataItem s = new DataItem(null,0,Integer.toString(i),(i+1),(max-i));
+				DataItem s = new DataItem(new String[]{"",""},0,Integer.toString(i),(i+1),(max-i));
 				db.insert(table, s);
 				cnt++;
 			}

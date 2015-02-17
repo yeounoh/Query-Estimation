@@ -3,7 +3,7 @@ public class QuickSort {
 
 	int partition(Object arr[], int left, int right){
 		int i= left, j= right;
-		Object tmp;
+		Object tmp; 
 		double pivot = ((DataItem) arr[(left + right) / 2]).value();
 		
 		while(i <= j){

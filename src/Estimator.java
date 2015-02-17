@@ -32,47 +32,24 @@ public class Estimator {
 			if(s!=null){ //why do we have bad samples?
 				samples.put(new Integer(n++), s);
 				
-				if(s instanceof State){
-					double gdp = ((State) s).getGDP();
-					
-					if(gdp < min)
-						min = gdp;
-					if(gdp > max)
-						max = gdp;
-					
-					String k = ""+((State) s).getName(); //key attribute is used for f-statistics
-					if(!hist.containsKey(k)){
-						hist.put(k, new HistBar(gdp, gdp, 1));
-						c_sum += gdp;
-					}
-					else{ 
-						HistBar bar = hist.get(k);
-						bar.setCount(bar.getCount() + 1);
-						bar.setLowerB(gdp);
-						bar.setUpperB(gdp);
-						hist.put(k, bar);
-					}
+				double val = ((DataItem) s).value();
+				
+				if(val < min)
+					min = val;
+				if(val > max)
+					max = val;
+				
+				String k = ""+((DataItem) s).name();
+				if(!hist.containsKey(k)){
+					hist.put(k, new HistBar(val, val, 1));
+					c_sum += val;
 				}
-				else if(s instanceof HIT){
-					double val = ((HIT) s).getValue();
-					
-					if(val < min)
-						min = val;
-					if(val > max)
-						max = val;
-					
-					String k = ""+((HIT) s).getName();
-					if(!hist.containsKey(k)){
-						hist.put(k, new HistBar(val, val, 1));
-						c_sum += val;
-					}
-					else{ 
-						HistBar bar = hist.get(k);
-						bar.setCount(bar.getCount() + 1);
-						bar.setLowerB(val);
-						bar.setUpperB(val);
-						hist.put(k, bar);
-					}
+				else{ 
+					HistBar bar = hist.get(k);
+					bar.setCount(bar.getCount() + 1);
+					bar.setLowerB(val);
+					bar.setUpperB(val);
+					hist.put(k, bar);
 				}
 			}
 		}
@@ -258,7 +235,7 @@ public class Estimator {
 					
 					for(int i=0;i<samples_b.length;i++){
 						Object s = samples_b[i];
-						double v = s instanceof State ? ((State) s).getGDP() : ((HIT) s).getValue();
+						double v = ((DataItem) s).value();
 						if(v >= lb && v <= split)
 							buckets_b.get(0).insertSample(s);
 						else{
@@ -268,13 +245,13 @@ public class Estimator {
 					
 					double prev = buckets_b.get(0).sum() + buckets_b.get(1).sum();
 					for(Object ss : samples_b){
-						split = ss instanceof State ? ((State) ss).getGDP() : ((HIT) ss).getValue();
+						split = ((DataItem)ss).value();
 						Bucket lbkt = new Bucket(lb,split);
 						Bucket rbkt = new Bucket(split,ub);
 						
 						for(int i=0;i<samples_b.length;i++){
 							Object s = samples_b[i];
-							double v = s instanceof State ? ((State) s).getGDP() : ((HIT) s).getValue();
+							double v = ((DataItem)s).value();
 							if(v >= lb && v <= split)
 								lbkt.insertSample(s);
 							else

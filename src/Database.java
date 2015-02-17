@@ -124,8 +124,7 @@ public class Database {
 				}
 				String query = "select * from temp r left join " + table + " s on s.rank = r.idx";
 				resultSet = statement.executeQuery(query);
-				statement.execute("drop table temp");
-			}	
+			}
 			//sampling without replacement
 			if(sampling_type == 2){
 				String query = "select * from " + table + " order by rand() limit " + n_class;
@@ -149,6 +148,8 @@ public class Database {
 					}
 				}
 			}
+			if(sampling_type == 1)
+				statement.execute("drop table temp");
 		}
 		
 		return result;
