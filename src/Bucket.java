@@ -78,30 +78,13 @@ public class Bucket {
 	}
 	
 	public double getSampleCov(){
-		if(n == 0)
-			return 0;
-		//System.out.println(f[0]);
-		return 1-(double) f[0]/(double) n;
+		Estimator est = new Estimator(samples.values().toArray());
+		return est.sampleCov();
 	}
 	
 	public double getCoeffVar(){
-		if(n == 0)
-			return 0;
-		
-		double cov = 1 - (double) f[0]/n; //f[0] = f_1
-		
-		double cv = 0.0;
-		if(cov == 0 || (n-1) == 0)
-			cv = Math.sqrt(n);
-		else{
-			int sum = 0;
-			for(int i=0;i<c;i++)
-				sum += i*(i+1)*f[i];
-			
-			cv = Math.max((double) c/cov*((double) sum/(double) n/(double) (n-1))-1, 0);
-		}
-		
-		return Math.sqrt(cv);
+		Estimator est = new Estimator(samples.values().toArray());
+		return est.coeffVar();
 	}
 	
 	public int getCount(){
