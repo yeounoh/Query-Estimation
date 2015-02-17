@@ -6,93 +6,311 @@ import java.util.ArrayList;
 import java.util.Iterator;
 
 // https://github.com/yeounoh/Query-Estimation.git
-public class Main {
+public class QueryEstimation {
 	
-	/**
-	 * 
-	 * @param db_name
-	 * @param table_name
-	 * @param do_gen
-	 * @param type
-	 * @return
-	 * @throws Exception
-	 */
-	public static Database genSynthetic(String db_name, String table_name, boolean do_gen, int type) throws Exception{
-		Database db = new Database();
-		db.connect(db_name);
-	
-		//generate data (samples) from population
-		if(do_gen){
-			db.drop();
-			db.connect(db_name);
-			DataGenerator gen = new DataGenerator();
-	
-			db.createSyntTable(table_name); 
-			if(type == 1){
-				//Wikipedia
-				gen.loadSyntheticData(db, table_name, 1);
-				System.out.println("sum for " + table_name + " is 14387583"); //ground truth
-			}
-			else if(type == 2){
-				//1~100
-				gen.loadSyntheticData(db, table_name, 2);
-				System.out.println("sum for " + table_name + " is 5050");
-			}
+	public class Configuration {
+		String db_name;
+		String tb_name;
+		int data_type;
+		int n_rep;
+		
+		//all data
+		int[] s_size;
+		
+		//synthetic data experiment only
+		int n_worker;
+		int sampling_type;
+		double lambda;
+		
+		public Configuration(String db_name, String tb_name, int data_type, int n_rep, int[] s_size){
+			this.db_name = db_name;
+			this.tb_name = tb_name;
+			this.data_type = data_type;
+			this.n_rep = n_rep;
+			this.s_size = s_size; //total sample size
 		}
 		
-		return db;
+		public void extraParam(int n_worker, int sampling_type, double lambda){
+			this.n_worker = n_worker; //(s_size/n_worker) samples per worker
+			this.sampling_type = sampling_type;
+			this.lambda = lambda;
+		}
+	}
+	
+	public class Result {
+		double[] cnt;
+		double[] sum;
+		double[] avg;
+		double[] measure; 
+		
+		public Result(double[] cnt, double[] sum, double[] avg, double[] measure){
+			this.cnt = cnt;
+			this.sum = sum;
+			this.avg = avg;
+			this.measure = measure;
+		}
+		
+		public String toString(){
+			String str = "";
+			for(double c : cnt)
+				str += c + " ";
+			for(double s : sum)
+				str += s + " ";
+			for(double a : avg)
+				str += a + " ";
+			for(double m : measure)
+				str += m + " ";
+			return str;
+		}
 	}
 	
 	/**
 	 * 
-	 * @param db_name
-	 * @param table_name
-	 * @param do_gen
-	 * @param type 1: GDP, 2: Solar
-	 * @return database object to connect to mysql db
-	 * @throws Exception
+	 * @param sample
+	 * @param n_bkt
+	 * @param bkt_type: 0- naive, 1- ER fixed, 2- ER auto
+	 * @param est_type: 0- chao92-based, 1- f1-based, 2- f12-based
+	 * @return
 	 */
-	public static Database genRealAMT(String db_name, String table_name, boolean do_gen, int type) throws Exception{
-		Database db = new Database();
-		db.connect(db_name);
-	
-		//generate data (samples) from population
-		if(do_gen){
-			db.drop();
-			db.connect(db_name);
-			DataGenerator gen = new DataGenerator();
+	public Result bucketApproach(Object[] sample, int n_bkt, double th, int bkt_type, int est_type){
+		Bucket[] buckets; //number of buckets may vary
+		double[] sum_by_bucket;
+		double[] cnt_by_bucket; //number of samples
+		double[] chao_by_bucket; //uniq items number estimation
+		double[] sc_by_bucket;
+		double[] cv_by_bucket;
+		
+		Estimator est = new Estimator(sample);
+		if(bkt_type == 0){
+			buckets = new Bucket[]{new Bucket(est.getMin(),est.getMax())};
+		}
+		else if(bkt_type == 1){
+			buckets = new Bucket[n_bkt];
+			double width = (est.getMax() - est.getMin())/n_bkt; 
+			for(int bi=0;bi<n_bkt;bi++){
+				buckets[bi] = new Bucket(bi*width, (bi+1)*width);
+			}
+		}
+		else if(bkt_type == 2){
+			buckets = est.autoBuckets(th, sample);
+		}
+		
+		for(Object s : sample){
+			if(s==null)
+				continue;
 			
-			//AMT
-			db.createHITTable(table_name); 
-			gen.loadRealAMT(db, table_name,type); //GDP
-			
-			if(type == 1){
-				//Wikipedia
-				db.createSyntTable("wiki"); 
-				gen.loadSyntheticData(db, "wiki", 1);
-				
-				// assume all answers contain the precise gdp values (no variations)
-				db.queryExec("create table amt_t as (select assign_id, worker_id, hit_id, "
-						+ "accept_t, amt.name, wiki.value from amt left join wiki on amt.name=wiki.name)");
-				db.queryExec("drop table amt");
-				db.queryExec("create table amt as (select * from amt_t)");
-				db.queryExec("drop table amt_t");
+			double value = ((DataItem) s).value();
+			for(Bucket b : buckets){
+				if(b.getLowerB() <= value && b.getUpperB() >= value){ //inclusive
+					b.insertSample(s);
+					break;
+				}
 			}
 		}
 		
-		return db;
+		double sum_t = 0, cnt_t = 0, uniq_t = 0, chao_t = 0, avg_sc = 0, avg_cv = 0;
+		for(int bi=0;bi<buckets.length;bi++){
+			Object[] samples_b = buckets[bi].getSamples().toArray();
+			est = new Estimator(samples_b);
+			
+			cnt_by_bucket[bi] = samples_b.length; 
+			sum_by_bucket[bi] = est_type == 1 ? est.sum() : est.sumf1(); 
+			sc_by_bucket[bi] = buckets[bi].getSampleCov();
+			cv_by_bucket[bi] = buckets[bi].getCoeffVar();
+			chao_by_bucket[bi] = est.chao92();
+			
+			cnt_t += cnt_by_bucket[bi];
+			uniq_t += est.getUniqueCount();
+			chao_t += chao_by_bucket[bi];
+			sum_t += sum_by_bucket[bi];
+			avg_sc += sc_by_bucket[bi] * (double) samples_b.length/sample.length; 
+			avg_cv += cv_by_bucket[bi] * (double) samples_b.length/sample.length;
+		}
+		
+		double[] cnt = {cnt_t, uniq_t, chao_t};
+		double[] sum = {sum_t};
+		double[] measure = {avg_sc, avg_cv};
+		
+		return new Result(cnt, sum, null, measure);
+	}
+	
+	public void runExperiment(Configuration conf) throws Exception{
+		boolean do_gen = true;
+		int n_class = 0; // ground truth for C (# of species), used for random sample generation
+		int p_size = 0;
+		
+		Database db = new DataGenerator().generateDataset(conf.db_name, conf.tb_name, do_gen, conf.data_type);
+		
+		//data statistics
+		int[][] uniq_rep = new int[conf.s_size.length][conf.n_rep]; //unique data items
+		
+		//estimate population statistics from samples (method1: naive)
+		double[][] naive_rep = new double[conf.s_size.length][conf.n_rep];
+		double[][] naivef1_rep = new double[conf.s_size.length][conf.n_rep];
+		double[][] estf12_rep = new double[conf.s_size.length][conf.n_rep];
+		double[][] estsc_rep = new double[conf.s_size.length][conf.n_rep]; //sample coverage
+		double[][] estcv_rep = new double[conf.s_size.length][conf.n_rep]; //coefficient of variance
+		
+		//estimate population statistics from samples (method2: bucket)
+		double[][] est_bkt_rep = new double[conf.s_size.length][conf.n_rep];
+		double[][] estf1_bkt_rep = new double[conf.s_size.length][conf.n_rep];
+		double[][] estf12_bkt_rep = new double[conf.s_size.length][conf.n_rep];
+		double[][] sc_bkt_rep = new double[conf.s_size.length][conf.n_rep];
+		double[][] cv_bkt_rep = new double[conf.s_size.length][conf.n_rep];
+		int[][] auto_b_size_rep = new int[conf.s_size.length][conf.n_rep];
+		
+		for(int ri=0;ri<conf.n_rep;ri++){
+			for(int si=0;si<conf.s_size.length;si++){
+				//data samples to run experiments
+				Object[] sample;
+				
+				//synthetic data experiment
+				if(conf.data_type == 1 || conf.data_type == 2){
+					n_class = conf.data_type == 1 ? 100 : 50;
+					
+					ArrayList<Object> samples = new ArrayList<Object>();
+					for(int i=0;i<conf.n_worker;i++){
+						db.sampleByRandom((int) Math.ceil(conf.s_size[si]/conf.n_worker), conf.tb_name, n_class, conf.sampling_type,conf.lambda);
+					}
+					while(samples.size() > conf.s_size[si])
+						samples.remove(samples.size()-1);
+					sample = samples.toArray();
+				}
+				//real data experiment
+				else if(conf.data_type == 3 || conf.data_type == 4){
+					p_size = conf.data_type == 3 ? 499 : 327;
+					
+					sample = db.sampleByTime(conf.s_size[si], conf.tb_name);
+				}
+				
+				//naive approach
+				Result naive = bucketApproach(sample, 1, 0.0, 0, 0);
+				Result naive_f1 = bucketApproach(sample, 1, 0.0, 0, 1);
+				
+				//ER fixed approach
+				Result bkt = bucketApproach(sample, 5, 0.0, 1, 0);
+				Result bkt_f1 = bucketApproach(sample, 5, 0.0, 1, 1);
+				
+				//ER auto approach
+				Result bkt_auto = bucketApproach(sample, 0, 0.05, 2, 0);
+				Result bkt_auto_f1 = bucketApproach(sample, 0, 0.05, 2, 1);
+				
+				//estimate population statistics from samples (method1: naive)
+				est_rep[si][ri] = est.sum();
+				estf1_rep[i][rep] = est.sumf1();
+				estf12_rep[i][rep] = est.sumf12();
+				estc_rep[i][rep] = est.sampleCov();
+				estcv_rep[i][rep] = est.coeffVar();
+				uniq_rep[i][rep] = est.getUniqueCount();
+				
+				for(int nbi=0;nbi<bucket_sizes;nbi++){//create buckets
+					//create buckets
+					Bucket[] buckets = null;
+					if(bucket_type == 1){
+						buckets = new Estimator(samples.toArray()).autoBuckets(thresh_c, thresh_cv, samples.toArray());
+						auto_b_size_rep[i][rep] = buckets.length;
+					}
+					else {
+						buckets = new Bucket[nbuckets[nbi]];
+						
+						if(bucket_type == 2){
+							//equi-size bucket
+							for(int ii=0;ii<nbuckets[nbi];ii++){ 
+								int rem= 0, b_size = samples.size()/nbuckets[nbi]; 
+								if(ii==(nbuckets[nbi]-1))
+									rem = samples.size()%nbuckets[nbi];
+								buckets[ii] = new Bucket(samples.subList(ii*b_size, (ii+1)*b_size + rem).toArray());
+							}
+						}
+						//equi-range bucket *how do we automatically adjust the number of bucket/size?
+						else if(bucket_type == 3){
+							double width = synt_data_type == 1? 2000000/buckets.length : n_class/buckets.length; //GDP2009- 2000000, GDP2012- 2500000
+							for(int ii=0;ii<nbuckets[nbi];ii++){
+								buckets[ii] = new Bucket(ii*width, (ii+1)*width);
+							}
+						}
+						
+						int cnt = 0; 
+						for(Object s:samples){
+							if(s==null)
+								continue;
+							if(s instanceof State){
+								double value = ((State) s).getGDP();
+								for(Bucket b : buckets){
+									if(bucket_type == 1 || bucket_type == 3)
+										if(b.getLowerB() <= value && b.getUpperB() >= value){
+											b.insertSample(s);
+											break;
+										}
+									else if(bucket_type == 2)
+										if(b.getLowerB() <= cnt && b.getUpperB() >= cnt){
+											b.insertSample(s);
+											cnt++;
+											break;
+										}
+								}
+							}
+						}
+					}
+					
+					cnt_by_bucket[i][nbi] = new double[buckets.length];
+					chao_by_bucket[i][nbi] = new double[buckets.length];
+					est_by_bucket[i][nbi] = new double[buckets.length];
+					c_by_bucket[i][nbi] = new double[buckets.length];
+					cv_by_bucket[i][nbi] = new double[buckets.length];
+					double sum_t = 0.0, avg_c = 0.0, avg_cv = 0.0;
+					for(int ii=0;ii<buckets.length;ii++){
+						Object[] samples_b = buckets[ii].getSamples().toArray();
+						est = new Estimator(samples_b);
+						cnt_by_bucket[i][nbi][ii] = samples_b.length; 
+						est_by_bucket[i][nbi][ii] = estimator_type == 1 ? est.sum() : est.sumf1(); 
+						sum_t += est_by_bucket[i][nbi][ii];
+						c_by_bucket[i][nbi][ii] = buckets[ii].getSampleCov();
+						cv_by_bucket[i][nbi][ii] = buckets[ii].getCoeffVar();
+						avg_c += c_by_bucket[i][nbi][ii] * (double) samples_b.length/(double) s_size[i]/(double) n_worker[wi]; 
+						avg_cv += cv_by_bucket[i][nbi][ii] * (double) samples_b.length/(double) s_size[i]/(double) n_worker[wi];
+						chao_by_bucket[i][nbi][ii] = est.chao92();
+					}
+					est_rep_bucket[i][nbi][rep] = sum_t; 
+					c_rep_bucket[i][nbi][rep] = avg_c;
+					cv_rep_bucket[i][nbi][rep] = avg_cv;
+				}
+			}
+			//contains the last run's results (
+			for(int j=0;j<bucket_sizes;j++){
+				for(int i=0;i<s_size.length;i++){
+					double sum_t = 0.0;
+					String cnt_t = "";
+					String chao_t = "";
+					//String c_t = "";
+					
+					int b_size = bucket_type == 1? auto_b_size_rep[i][rep] : nbuckets[j];
+					for(int k=0;k<b_size;k++){
+						sum_t += est_by_bucket[i][j][k];
+						cnt_t += cnt_by_bucket[i][j][k] + " ";
+						chao_t += chao_by_bucket[i][j][k] + " ";
+						//c_t += c_by_bucket[i][j][k] + " ";
+					} 
+					bw2.write(""+lamda[cri]+" "+n_worker[wi]+" "+b_size+" "+s_size[i]+" "+sum_t);
+					bw3.write(""+lamda[cri]+" "+n_worker[wi]+" "+b_size+" "+s_size[i]+" "+cnt_t);
+					bw4.write(""+lamda[cri]+" "+n_worker[wi]+" "+b_size+" "+s_size[i]+" "+chao_t);
+					//bw6.write(""+lamda[cri]+" "+n_worker[wi]+" "+b_size+" "+s_size[i]+" "+c_t);
+					bw2.flush(); bw2.newLine();
+					bw3.flush(); bw3.newLine();
+					bw4.flush(); bw4.newLine();
+					//bw6.flush(); bw6.newLine();
+				}
+			}
+			}
+		}
+		
 	}
 	
 	public static void main(String[] args){
 		try{
 			//experimental parameters
-			boolean amt_data = false;
-			boolean synt_data = true;
-			int synt_data_type = 1; //1: wiki, 2: uniform
-			int n_rep = 200; //synthetic data experiment
-			int amt_data_type = 2; //1: GDP, 2: Solar
-			boolean do_gen = true;
-			
+			int data_type = 1; //1- uniform, 2- syntGDP, 3- realGDP, 4- solar
+						
 			if(amt_data){
 				//database configuration-2
 				String db_name = "gdp";
@@ -100,13 +318,13 @@ public class Main {
 				
 				int p_size = 0;
 				Database db = null;
-				if(amt_data_type == 1){
+				if(data_type == 3){
 					p_size = 499; // number of samples (GDP)
-					db = genRealAMT(db_name, table_name, do_gen, 1); //1:GDP, 2:Solar
+					db = new DataGenerator().generateDataset(db_name, table_name, do_gen, data_type);
 				}
-				else if(amt_data_type == 2){
+				else if(data_type == 4){
 					p_size = 327; // number of samples (Solar)
-					db = genRealAMT(db_name, table_name, do_gen, 2); //1:GDP, 2:Solar
+					db = new DataGenerator().generateDataset(db_name, table_name, do_gen, data_type);
 				}
 				 
 				//experiment configuration

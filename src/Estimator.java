@@ -102,6 +102,14 @@ public class Estimator {
 		return c;
 	}
 	
+	public double getMax(){
+		return max;
+	}
+	
+	public double getMin(){
+		return min;
+	}
+	
 	public double chao92(){
 		if(n == 0)
 			return 0;
@@ -199,7 +207,7 @@ public class Estimator {
 	 * @param sample: validation data samples
 	 * @return
 	 */
-	public Bucket[] autoBuckets(double thresh_c, double thresh_cv, Object[] sample) {
+	public Bucket[] autoBuckets(double thresh_cv, Object[] sample) {
 		int nbkt_prev = 0;
 		
 		ArrayList<Bucket> buckets = new ArrayList<Bucket>(); 

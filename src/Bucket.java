@@ -42,33 +42,17 @@ public class Bucket {
 			if(s != null){
 				this.samples.put(new Integer(n++), s);
 				
-				if(s instanceof State){ 
-					double v = ((State) s).getGDP();
-					String k = ((State) s).getName(); //key attribute is used for f-statistics
-					if(!hist.containsKey(k)){
-						hist.put(k, new HistBar(v, v, 1));
-					}
-					else{ 
-						HistBar bar = hist.get(k);
-						bar.setCount(bar.getCount() + 1);
-						bar.setLowerB(v);
-						bar.setUpperB(v);
-						hist.put(k, bar);
-					}
+				double v = ((DataItem) s).value();
+				String k = ((DataItem) s).name();
+				if(!hist.containsKey(k)){
+					hist.put(k, new HistBar(v, v, 1));
 				}
-				else if(s instanceof HIT){
-					double v = ((HIT) s).getValue();
-					String k = ((HIT)s).getName();
-					if(!hist.containsKey(k)){
-						hist.put(k, new HistBar(v, v, 1));
-					}
-					else{ 
-						HistBar bar = hist.get(k);
-						bar.setCount(bar.getCount() + 1);
-						bar.setLowerB(v);
-						bar.setUpperB(v);
-						hist.put(k, bar);
-					}
+				else{ 
+					HistBar bar = hist.get(k);
+					bar.setCount(bar.getCount() + 1);
+					bar.setLowerB(v);
+					bar.setUpperB(v);
+					hist.put(k, bar);
 				}
 			}
 		}
@@ -152,34 +136,18 @@ public class Bucket {
 	public void insertSample(Object s){
 		if(s != null){
 			samples.put(new Integer(n++), s); 
-			if(s instanceof State){ 
-				double v = ((State) s).getGDP();
-				String k = ((State) s).getName(); //key attribute is used for f-statistics 
-				
-				if(!hist.containsKey(k)){
-					hist.put(k, new HistBar(v, v, 1));
-				}
-				else{ 
-					HistBar bar = hist.get(k);
-					bar.setCount(bar.getCount() + 1);
-					bar.setLowerB(v);
-					bar.setUpperB(v);
-					hist.put(k, bar);
-				}
+			
+			double v = ((DataItem) s).value();
+			String k = ((DataItem) s).name(); 
+			if(!hist.containsKey(k)){
+				hist.put(k, new HistBar(v, v, 1));
 			}
-			else if(s instanceof HIT){
-				double v = ((HIT) s).getValue();
-				String k = ((HIT)s).getName(); 
-				if(!hist.containsKey(k)){
-					hist.put(k, new HistBar(v, v, 1));
-				}
-				else{ 
-					HistBar bar = hist.get(k);
-					bar.setCount(bar.getCount() + 1);
-					bar.setLowerB(v);
-					bar.setUpperB(v);
-					hist.put(k, bar);
-				}
+			else{ 
+				HistBar bar = hist.get(k);
+				bar.setCount(bar.getCount() + 1);
+				bar.setLowerB(v);
+				bar.setUpperB(v);
+				hist.put(k, bar);
 			}
 			
 			int[] f = new int[this.samples.size()];
