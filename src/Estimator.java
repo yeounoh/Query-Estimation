@@ -38,7 +38,7 @@ public class Estimator {
 					min = val;
 				if(val > max)
 					max = val;
-				
+					
 				String k = ""+((DataItem) s).name();
 				if(!hist.containsKey(k)){
 					hist.put(k, new HistBar(val, val, 1));

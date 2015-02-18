@@ -110,10 +110,10 @@ public class Database {
 			return null;
 		
 		Random rand = new Random();
-		HashMap<String,String> map = new HashMap<String,String>();
+		HashMap<Integer,String> map = new HashMap<Integer,String>();
 		Object[] result = new Object[s_size];
 		statement = connect.createStatement();
-		
+		//System.out.println("sample by random");
 		int idx= 0;
 		while(idx < s_size){
 			//sampling with replacement
@@ -126,7 +126,7 @@ public class Database {
 				resultSet = statement.executeQuery(query);
 			}
 			//sampling without replacement
-			if(sampling_type == 2){
+			if(sampling_type == 2){ //System.out.println("sampling " + s_size +" out of " + n_class + " items.");
 				String query = "select * from " + table + " order by rand() limit " + n_class;
 				resultSet = statement.executeQuery(query);
 			}
@@ -141,13 +141,13 @@ public class Database {
 				String[] ids = {source_id, record_id};
 				
 				double pdf = Math.exp(-1*(rank-1)*lambda/n_class); // always accept if lambda = 0.
-				if(rand.nextDouble() <= pdf && !map.containsKey(""+rank)){
+				if(rand.nextDouble() <= pdf && !map.containsKey(rank)){
 					result[idx++] = new DataItem(ids, timestamp, name, value, rank);
-					if(sampling_type == 2){
-						map.put(""+rank, null);
+					if(sampling_type == 2){ //System.out.print(rank + " ");
+						map.put(rank, null);
 					}
 				}
-			}
+			}//System.out.print("\n");
 			if(sampling_type == 1)
 				statement.execute("drop table temp");
 		}

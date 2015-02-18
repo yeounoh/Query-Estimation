@@ -69,6 +69,40 @@ public class Bucket {
 		c = hist.size();
 	}
 	
+	/**
+	 * int[] f must have been initialized via Bucket(object[] sample) call? no
+	 * @param s: a sample
+	 */
+	public void insertSample(Object s){
+		if(s != null){
+			samples.put(new Integer(n++), s); 
+			
+			double v = ((DataItem) s).value();
+			String k = ((DataItem) s).name(); 
+			if(!hist.containsKey(k)){
+				hist.put(k, new HistBar(v, v, 1));
+			}
+			else{ 
+				HistBar bar = hist.get(k);
+				bar.setCount(bar.getCount() + 1);
+				bar.setLowerB(v);
+				bar.setUpperB(v);
+				hist.put(k, bar);
+			}
+			
+			int[] f = new int[this.samples.size()];
+			Collection<HistBar> col = hist.values();
+			Iterator<HistBar> itr = col.iterator();
+			while(itr.hasNext()){
+				HistBar bar = itr.next();
+				int cnt = bar.getCount();
+				f[cnt-1] = f[cnt-1]+1;
+			}
+			this.f = f;
+			c = hist.size(); 
+		}
+	}
+	
 	public void setIdx(int i){
 		this.idx = i;
 	}
@@ -112,41 +146,11 @@ public class Bucket {
 		return est.sum();
 	}
 	
-	/**
-	 * int[] f must have been initialized via Bucket(object[] sample) call? no
-	 * @param s: a sample
-	 */
-	public void insertSample(Object s){
-		if(s != null){
-			samples.put(new Integer(n++), s); 
-			
-			double v = ((DataItem) s).value();
-			String k = ((DataItem) s).name(); 
-			if(!hist.containsKey(k)){
-				hist.put(k, new HistBar(v, v, 1));
-			}
-			else{ 
-				HistBar bar = hist.get(k);
-				bar.setCount(bar.getCount() + 1);
-				bar.setLowerB(v);
-				bar.setUpperB(v);
-				hist.put(k, bar);
-			}
-			
-			int[] f = new int[this.samples.size()];
-			Collection<HistBar> col = hist.values();
-			Iterator<HistBar> itr = col.iterator();
-			while(itr.hasNext()){
-				HistBar bar = itr.next();
-				int cnt = bar.getCount();
-				f[cnt-1] = f[cnt-1]+1;
-			}
-			this.f = f;
-			c = hist.size(); 
-		}
-	}
-	
 	public Collection<Object> getSamples(){
 		return samples.values();
+	}
+	
+	public String toString(){
+		return "["+lower_b+", "+upper_b+"]";
 	}
 }

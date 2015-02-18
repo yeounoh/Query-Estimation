@@ -76,7 +76,7 @@ public class QueryEstimation {
 	 * 
 	 * @param sample
 	 * @param n_bkt
-	 * @param bkt_type: 0- naive, 1- ER fixed, 2- ER auto
+	 * @param bkt_type: 1- ER fixed, 2- ER auto
 	 * @param est_type: 0- chao92-based, 1- f1-based, 2- f12-based
 	 * @return
 	 */
@@ -84,31 +84,30 @@ public class QueryEstimation {
 		Bucket[] buckets= null; //number of buckets may vary
 		Estimator est = new Estimator(sample);
 		
-		if(bkt_type == 0){
-			buckets = new Bucket[]{new Bucket(est.getMin(),est.getMax())};
-		}
-		else if(bkt_type == 1){
+		if(bkt_type == 1){
 			buckets = new Bucket[n_bkt];
-			double width = (est.getMax() - est.getMin())/n_bkt; 
+			double width = (est.getMax() - est.getMin())/n_bkt; //System.out.println("width: "+width);
 			for(int bi=0;bi<n_bkt;bi++){
-				buckets[bi] = new Bucket(bi*width, (bi+1)*width);
+				buckets[bi] = new Bucket(Math.floor(bi*width+est.getMin()), Math.ceil((bi+1)*width+est.getMin()));
+			}
+			
+			for(Object s : sample){
+				if(s==null)
+					continue;
+				
+				double value = ((DataItem) s).value();
+				for(Bucket b : buckets){
+					if(b.getLowerB() <= value && b.getUpperB() >= value){ //inclusive
+						b.insertSample(s);
+						break;
+					}
+					else if(n_bkt == 1 && bkt_type == 1)
+						System.out.println("what?" + value + " bigger than " + b.getUpperB());
+				}
 			}
 		}
 		else if(bkt_type == 2){
 			buckets = est.autoBuckets(th, sample);
-		}
-		
-		for(Object s : sample){
-			if(s==null)
-				continue;
-			
-			double value = ((DataItem) s).value();
-			for(Bucket b : buckets){
-				if(b.getLowerB() <= value && b.getUpperB() >= value){ //inclusive
-					b.insertSample(s);
-					break;
-				}
-			}
 		}
 		
 		double[] sum_by_bucket = new double[buckets.length];
@@ -180,7 +179,7 @@ public class QueryEstimation {
 					ArrayList<Object> samples = new ArrayList<Object>();
 					for(int i=0;i<conf.n_worker;i++){
 						Object[] s_worker = db.sampleByRandom((int) Math.ceil(conf.s_size[si]/conf.n_worker), 
-								conf.tb_name, n_class, conf.sampling_type,conf.lambda); 
+								conf.tb_name, n_class, conf.sampling_type, conf.lambda); 
 						for(Object s : s_worker){
 							samples.add(s);
 						}
@@ -196,8 +195,8 @@ public class QueryEstimation {
 				}
 				
 				//naive approach
-				Result naive = bucketApproach(sample, 1, 0.0, 0, 0);
-				Result naive_f1 = bucketApproach(sample, 1, 0.0, 0, 1);
+				Result naive = bucketApproach(sample, 1, 0.0, 1, 0);
+				Result naive_f1 = bucketApproach(sample, 1, 0.0, 1, 1);
 				
 				//ER fixed approach
 				Result bkt = bucketApproach(sample, 5, 0.0, 1, 0);
@@ -220,14 +219,13 @@ public class QueryEstimation {
 		FileOutputStream fos= new FileOutputStream(fname);
 		BufferedWriter bw= new BufferedWriter(new OutputStreamWriter(fos));
 		bw.write("s_size | naive_avg | naive_std | naivef1 | naivef1_std | bkt_avg | bkt_std | bktf1_avg | bktf1_std | "
-				+ "bktauto_avg | bktauto_std | bktf1auto_avg | bktf1auto_std | uniq_avg | uniq_std");
+				+ "bktauto_avg | bktauto_std | bktf1auto_avg | bktf1auto_std | uniq_avg | uniq_std | nbktauto_avg | nbktf1auto_avg");
 		bw.newLine();
 		bw.flush();
 
-		//naive
 		for(int si=0;si<conf.s_size.length;si++){
 			double avg=0, avg_f1=0, avg_bkt=0, avg_bktf1=0, avg_bkt_auto=0, avg_bktf1_auto=0, avg_uniq=0;
-			double std=0, std_f1=0, std_bkt=0, std_bktf1=0, std_bkt_auto=0, std_bktf1_auto=0, std_uniq=0;
+			double std=0, std_f1=0, std_bkt=0, std_bktf1=0, std_bkt_auto=0, std_bktf1_auto=0, std_uniq=0, avg_nbktauto=0, avg_nbktf1auto=0;
 			
 			for(int ri=0;ri<conf.n_rep;ri++){
 				avg += naive_rep[si][ri][4]/conf.n_rep;
@@ -237,6 +235,8 @@ public class QueryEstimation {
 				avg_bkt_auto += bkt_auto_rep[si][ri][4]/conf.n_rep;
 				avg_bktf1_auto += bktf1_auto_rep[si][ri][4]/conf.n_rep;
 				avg_uniq += naive_rep[si][ri][1]/conf.n_rep;
+				avg_nbktauto += bkt_auto_rep[si][ri][3]/conf.n_rep;
+				avg_nbktf1auto += bktf1_auto_rep[si][ri][3]/conf.n_rep;
 			}
 			
 			for(int ri=0;ri<conf.n_rep;ri++){
@@ -255,7 +255,7 @@ public class QueryEstimation {
 			bw.write(conf.s_size[si] + " " + avg + " " + std + " " + avg_f1 + " " + std_f1
 					+ " " + avg_bkt + " " + std_bkt + " " + avg_bktf1 + " " + std_bktf1 
 					+ " " + avg_bkt_auto + " " + std_bkt_auto + " " + avg_bktf1_auto
-					+ " " + std_bktf1_auto + " " + avg_uniq + " " + std_uniq);
+					+ " " + std_bktf1_auto + " " + avg_uniq + " " + std_uniq + " " + avg_nbktauto + " " + avg_nbktf1auto);
 			bw.newLine();
 			bw.flush();
 		}
@@ -284,10 +284,10 @@ public class QueryEstimation {
 		//run experiments
 		QueryEstimation qe = new QueryEstimation();
 		try {
-			//qe.runExperiment(config1); //uniform data
-			//qe.runExperiment(config2); //synthetic gdp data
-			qe.runExperiment(config3); //real gdp data
-			qe.runExperiment(config4); //real solar data
+//			qe.runExperiment(config1); //uniform data
+			qe.runExperiment(config2); //synthetic gdp data
+//			qe.runExperiment(config3); //real gdp data
+//			qe.runExperiment(config4); //real solar data
 		} 
 		catch (Exception e) {
 			e.printStackTrace();
