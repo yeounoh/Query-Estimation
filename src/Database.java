@@ -30,7 +30,7 @@ public class Database {
 			statement = connect.createStatement();
 			statement.execute("use " + database);
 		}
-		catch(MySQLSyntaxErrorException e){
+		catch(MySQLSyntaxErrorException e){ 
 			statement.execute("create database " + database);
 			statement.execute("use " + database);
 		}
@@ -77,7 +77,7 @@ public class Database {
 		Object[] result = new Object[s_size];
 		statement = connect.createStatement();
 		
-		String query = "select * from " + table + " order by accept_t limit " + s_size;
+		String query = "select * from " + table + " order by timestamp limit " + s_size;
 		resultSet = statement.executeQuery(query);
 		
 		int idx= 0;
@@ -131,7 +131,7 @@ public class Database {
 				resultSet = statement.executeQuery(query);
 			}
 			
-			while(resultSet.next()){
+			while(resultSet.next() && idx < s_size){
 				String source_id = resultSet.getString("source_id");
 				String record_id = resultSet.getString("record_id");
 				long timestamp = resultSet.getLong("timestamp");

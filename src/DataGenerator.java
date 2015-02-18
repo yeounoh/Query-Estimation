@@ -40,16 +40,19 @@ public class DataGenerator {
 			gen.loadDataset(db, table_name, type);
 			
 			if(type == 3){
+				//statement.execute("create table " + table + 
+				//		" (source_id char(30), record_id char(30)"
+				//		+ ", timestamp bigint, name char(50), value double, rank int)");
 				//Data cleaning using Wikipedia GDP data
 				db.createTable("wiki"); 
 				gen.loadDataset(db, "wiki", 2); //syntGDP
 				
 				// assume all answers contain the precise gdp values (no variations)
-				db.queryExec("create table amt_t as (select assign_id, worker_id, hit_id, "
-						+ "accept_t, amt.name, wiki.value from amt left join wiki on amt.name=wiki.name)");
-				db.queryExec("drop table amt");
-				db.queryExec("create table amt as (select * from amt_t)");
-				db.queryExec("drop table amt_t");
+				db.queryExec("create table " + table_name + "_t as (select a.source_id, a.record_id, a.timestamp, "
+						+ "a.name, wiki.value, wiki.rank from " + table_name + " a left join wiki on a.name=wiki.name)");
+				db.queryExec("drop table " + table_name);
+				db.queryExec("create table " + table_name + " as (select * from " + table_name + "_t)");
+				db.queryExec("drop table " + table_name + "_t");
 			}
 		}
 		
@@ -99,7 +102,7 @@ public class DataGenerator {
 			
 			while((line = br.readLine())!=null){
 				String[] tokens = line.split(",");
-				DataItem s = new DataItem(null,0,tokens[0].substring(1),Double.parseDouble(tokens[2]),Integer.parseInt(tokens[1]));
+				DataItem s = new DataItem(new String[]{"",""},0,tokens[0].substring(1),Double.parseDouble(tokens[2]),Integer.parseInt(tokens[1]));
 				db.insert(table, s);
 				cnt++;
 			}

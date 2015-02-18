@@ -148,6 +148,14 @@ public class QueryEstimation {
 		int n_class = 0; // ground truth for C (# of species), used for random sample generation
 		String fname = "./result/";
 		
+		if(conf.data_type == 1 || conf.data_type == 2){
+			n_class = conf.data_type == 1 ? 100 : 50;
+			fname = conf.data_type == 1 ? fname + "uniform.txt" : fname + "syntGDP.txt";
+		}
+		else if(conf.data_type == 3 || conf.data_type == 4){
+			fname = conf.data_type == 3 ? fname + "realGDP.txt" : fname + "solar.txt";
+		}
+		
 		Database db = new DataGenerator().generateDataset(conf.db_name, conf.tb_name, do_gen, conf.data_type);
 		
 		//method1: naive
@@ -161,15 +169,13 @@ public class QueryEstimation {
 		double[][][] bktf1_auto_rep = new double[conf.s_size.length][conf.n_rep][];
 		
 		for(int ri=0;ri<conf.n_rep;ri++){
-			System.out.print(".");
+			System.out.print("."); //progress meter
 			for(int si=0;si<conf.s_size.length;si++){
 				//data samples to run experiments
 				Object[] sample = null;
 				
 				//synthetic data experiment
 				if(conf.data_type == 1 || conf.data_type == 2){
-					n_class = conf.data_type == 1 ? 100 : 50;
-					fname = conf.data_type == 1 ? fname + "uniform.txt" : fname + "syntGDP.txt";
 					
 					ArrayList<Object> samples = new ArrayList<Object>();
 					for(int i=0;i<conf.n_worker;i++){
@@ -185,7 +191,6 @@ public class QueryEstimation {
 				}
 				//real data experiment
 				else if(conf.data_type == 3 || conf.data_type == 4){
-					fname = conf.data_type == 3 ? fname + "realGDP.txt" : fname + "solar.txt";
 					
 					sample = db.sampleByTime(conf.s_size[si], conf.tb_name);
 				}
@@ -260,9 +265,9 @@ public class QueryEstimation {
 		//experimental setup
 		int[] s_size1 = {20,80,140,200,260,320,380,440,500,560,620,680,740,800,860,920,980};
 		int[] s_size2 = {20,40,60,80,100,120,140,160,180,200,220,240,260,280,300,320,340,360,380,400,420,440,460,480,500};
-		Configuration config1 = new Configuration("synt","unif",1,200,s_size1);
+		Configuration config1 = new Configuration("synt_db","unif",1,200,s_size1);
 		config1.extraParam(20, 1, 0);
-		Configuration config2 = new Configuration("synt","gdp",2,200,s_size2);
+		Configuration config2 = new Configuration("synt_db","gdp",2,200,s_size2);
 		config2.extraParam(20, 2, 0.5);
 		
 		int[] s_size3 = new int[(499-20)/20];
@@ -273,14 +278,14 @@ public class QueryEstimation {
 		for(int i=0;i<s_size4.length-1;i++)
 			s_size4[i] = 20 + i*20;
 		s_size4[s_size4.length-1] = 327;
-		Configuration config3 = new Configuration("real","gdp",3,1,s_size3);
-		Configuration config4 = new Configuration("real","solar",4,1,s_size4);
+		Configuration config3 = new Configuration("real_db","gdp",3,1,s_size3);
+		Configuration config4 = new Configuration("real_db","solar",4,1,s_size4);
 		
 		//run experiments
 		QueryEstimation qe = new QueryEstimation();
 		try {
-			qe.runExperiment(config1); //uniform data
-			qe.runExperiment(config2); //synthetic gdp data
+			//qe.runExperiment(config1); //uniform data
+			//qe.runExperiment(config2); //synthetic gdp data
 			qe.runExperiment(config3); //real gdp data
 			qe.runExperiment(config4); //real solar data
 		} 
