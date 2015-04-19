@@ -48,4 +48,8 @@ public class DataItem {
 	public long timestamp(){
 		return timestamp;
 	}
+	
+	public void setRank(int rank){
+		this.rank = rank;
+	}
 }

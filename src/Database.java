@@ -106,8 +106,10 @@ public class Database {
 	 * @throws SQLException
 	 */
 	public Object[] sampleByRandom(int s_size, String table, int n_class, int sampling_type, double lambda) throws SQLException {
-		if(sampling_type == 2 && s_size > n_class)
+		if(sampling_type == 2 && s_size > n_class){
+			System.out.println("sampleByRandom(): "+n_class+" "+s_size);
 			return null;
+		}
 		
 		Random rand = new Random();
 		HashMap<Integer,String> map = new HashMap<Integer,String>();

@@ -141,9 +141,28 @@ public class Bucket {
 		return upper_b;
 	}
 	
-	public double sum(){
+	public double sumEst(){
 		Estimator est = new Estimator(samples.values().toArray());
-		return est.sum();
+		return est.sumEst();
+	}
+	
+	public double max(){
+		Estimator est = new Estimator(samples.values().toArray());
+		return est.getMax();
+	}
+	
+	public double maxEst(){
+		Estimator est = new Estimator(samples.values().toArray());
+		double max = 0.0;
+		double max_orig = est.getMax();
+		if(est.chao92() > c){
+			max = est.getSampleMean() + 2*est.getSampleStd();
+			max = max > max_orig? max:max_orig;
+		}
+		else{
+			max = max_orig;
+		}
+		return max;
 	}
 	
 	public Collection<Object> getSamples(){

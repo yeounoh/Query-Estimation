@@ -5,7 +5,10 @@ import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Random;
+import java.util.Set;
 
 public class Estimator {
 	
@@ -13,8 +16,9 @@ public class Estimator {
 	private int c; //unique classes in sample
 	//private int C; //total number of unique classes
 	private int[] f;
+	private HashMap<Integer, Double[]> dist;
 	private HashMap<Integer, Object> samples;
-	private HashMap<String,HistBar> hist; 
+	//private HashMap<String,HistBar> hist; 
 	private double c_sum;
 	private double f1_sum, f12_sum;
 	private double min, max;
@@ -25,7 +29,8 @@ public class Estimator {
 		f12_sum = 0;
 		min = Double.MAX_VALUE; 
 		max = Double.MIN_VALUE;
-		hist = new HashMap<String,HistBar>();
+		//hist = new HashMap<String,HistBar>();
+		dist = new HashMap<Integer, Double[]>();
 		samples = new HashMap<Integer,Object>();
 		
 		for(Object s:sample){
@@ -39,28 +44,26 @@ public class Estimator {
 				if(val > max)
 					max = val;
 					
-				String k = ""+((DataItem) s).name();
-				if(!hist.containsKey(k)){
-					hist.put(k, new HistBar(val, val, 1));
-					c_sum += val;
+				Integer k = new Integer(((DataItem) s).rank());
+				if(dist.containsKey(k)){
+					Double[] v = dist.get(k);
+					dist.replace(k, new Double[]{v[0].doubleValue()+1, v[1]});
 				}
-				else{ 
-					HistBar bar = hist.get(k);
-					bar.setCount(bar.getCount() + 1);
-					bar.setLowerB(val);
-					bar.setUpperB(val);
-					hist.put(k, bar);
+				else{
+					c_sum += val;
+					dist.put(k, new Double[]{new Double(1), val});
 				}
 			}
 		}
 		
 		int[] f = new int[samples.size()];
-		Collection<HistBar> col = hist.values();
-		Iterator<HistBar> itr = col.iterator();
+		Iterator<Integer> itr = dist.keySet().iterator();
 		while(itr.hasNext()){
-			HistBar bar = itr.next();
-			int cnt = bar.getCount();
-			double val = bar.getLowerB();
+			Integer k = itr.next();
+			Double[] v = dist.get(k);
+			double cnt = v[0].doubleValue();
+			double val = v[1].doubleValue();
+			
 			if(cnt == 1){
 				f1_sum += val;
 				f12_sum += val;
@@ -69,14 +72,37 @@ public class Estimator {
 				f12_sum += val;
 			}
 			
-			f[cnt-1] = f[cnt-1]+1;
+			f[(int)cnt-1] = f[(int)cnt-1]+1;
+			
+			dist.replace(k, new Double[]{v[0].doubleValue(), v[1]});
 		}
 		this.f = f;
-		this.c = hist.size();
+		this.c = dist.size(); 
 	}
 	
 	public int getUniqueCount() {
 		return c;
+	}
+	
+	public double getSampleMean(){
+		double mean = 0.0;
+		for(Object s : samples.values().toArray()){
+			mean += ((DataItem) s).value();
+		}
+		return mean/n;
+	}
+	
+	public double getSampleStd(){
+		double mean = 0.0, sqrd_mean = 0.0;
+		for(Object s : samples.values().toArray()){
+			double v = ((DataItem)s).value();
+			mean += v;
+			sqrd_mean += v*v;
+		}
+		mean = mean/n;
+		sqrd_mean = sqrd_mean/n;
+		
+		return Math.sqrt(sqrd_mean - mean*mean);
 	}
 	
 	public double getMax(){
@@ -113,10 +139,90 @@ public class Estimator {
 		if(n == 0)
 			return 0;
 		
-		if(f[1] == 0)
+		if(f.length < 2 || f[1] == 0)
 			return c;
 		
 		return c+f[0]*f[0]/2/f[1];
+	}
+	
+	// # samples for workers: n_w[i], where i indexes worker.
+	public double MonteCarlo(double C_hat, int[] n_w, int err_type){
+		int n_sim = 100;
+		Random r = new Random();
+		int n_size = 0;
+		for(int i : n_w)
+			n_size += i;
+		
+		double err_sum = 0;
+		for(int rep=0;rep<n_sim;rep++){
+			
+			HashMap<Integer,Double> simulated = new HashMap();
+			for(int i=0;i<n_w.length;i++){ //for each worker
+				HashMap<Integer,Double> simulated_w = new HashMap(); //without replacement
+				int j= 0;
+				while(j<Math.min(C_hat,n_w[i])){
+					int rank = (int) Math.floor(r.nextDouble()*C_hat) + 1; //rank instead of value
+					if(!simulated_w.containsKey(new Integer(rank))){
+						simulated_w.put(new Integer(rank), new Double(1));
+						j++;
+						if(!simulated.containsKey(new Integer(rank)))
+							simulated.put(new Integer(rank), new Double(1));
+						else
+							simulated.replace(new Integer(rank), simulated.get(new Integer(rank)).doubleValue()+1);
+					}
+				}
+			}
+			double f1_sim = 0, f2_sim = 0;
+			Iterator<Integer> keys = simulated.keySet().iterator();
+			while(keys.hasNext()){
+				Integer k = keys.next();
+				double cnt = simulated.get(k).doubleValue();
+				if(cnt == 1){
+					f1_sim++;
+				}
+				else if(cnt == 2){
+					f2_sim++;
+				}
+			} 
+			
+			if(err_type == 1){
+				if(f2_sim != 0)
+					err_sum += Math.abs(chao84() - (simulated.keySet().size() + f1_sim*f1_sim/2/f2_sim));
+			}
+			else if(err_type == 2){ //kullback-leibler divergence
+				Set<Integer> Pkeys = dist.keySet();
+				Set<Integer> Qkeys = simulated.keySet();
+				
+				Set<Integer> PQkeys = new HashSet<Integer>();
+				PQkeys.addAll(Pkeys);
+				PQkeys.addAll(Qkeys);
+				Iterator<Integer> PQkeys_itr = PQkeys.iterator();
+				double kl = 0; //laplace smoothing taken into account
+				while(PQkeys_itr.hasNext()){
+					Integer k = PQkeys_itr.next();
+					double q= 0, p= 0;
+					if(dist.containsKey(k))
+						p = (dist.get(k)[0].doubleValue()+1)/(samples.size()+PQkeys.size());
+					else
+						p = 1.0/(samples.size()+PQkeys.size());
+					
+					if(simulated.containsKey(k))
+						q = (simulated.get(k).doubleValue()+1)/(n_size+PQkeys.size());
+					else
+						q = 1.0/(n_size+PQkeys.size());
+					
+					if(p != 0) //this is not possible with laplace smoothig, but note that 0*ln0 -> 0
+						kl += p*Math.log(p/q);
+				}
+				err_sum += kl;
+			}
+			else if(err_type == 3){ // kendal tau distance
+				
+			}
+			else
+				err_sum = 0;
+		}
+		return err_sum/n_sim;
 	}
 	
 	//if f-1 is the best indicator of the missing classes, and we have very skewed value distribution, then 
@@ -132,14 +238,25 @@ public class Estimator {
 		if(c == 0 || (f[0]+f[1]) == 0)
 			return c_sum;
 		
-		return (double) c_sum  + f12_sum/(double) (f[0]+f[1]) * (chao92() - c);
+		return (double) c_sum + f12_sum/c*(chao92()-c);
 	}
 	
-	public double sum(){
+	public double csum(){
+		return c_sum;
+	}
+	
+	public double sumEst(int C_hat){
+		if(c == 0)
+			return c_sum;
+		
+		return (double) c_sum + f1_sum/c*(C_hat-c);
+	}
+	
+	public double sumEst(){
 		if(c == 0) //(n==0)
 			return c_sum;
 		
-		return (double) c_sum * chao92()/(double) c; //chao92 estimates the richness of species
+		return (double) c_sum + c_sum/c*(chao92()-c); //chao92 estimates the richness of species
 		//return (double) n_sum * chao92()/(double) n; //chao92 estimates the population size
 	}
 
@@ -243,7 +360,7 @@ public class Estimator {
 						}
 					}
 					
-					double prev = buckets_b.get(0).sum() + buckets_b.get(1).sum();
+					double prev = buckets_b.get(0).sumEst() + buckets_b.get(1).sumEst();
 					for(Object ss : samples_b){
 						split = ((DataItem)ss).value();
 						Bucket lbkt = new Bucket(lb,split);
@@ -258,11 +375,11 @@ public class Estimator {
 								rbkt.insertSample(s);
 						}
 						
-						if(prev > lbkt.sum() + rbkt.sum()){
+						if(prev > lbkt.sumEst() + rbkt.sumEst()){
 							buckets_b.clear();
 							buckets_b.add(lbkt);
 							buckets_b.add(rbkt);
-							prev = lbkt.sum() + rbkt.sum();
+							prev = lbkt.sumEst() + rbkt.sumEst();
 						}
 					}
 					

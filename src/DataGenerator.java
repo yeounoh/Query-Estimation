@@ -17,12 +17,25 @@ import java.util.Random;
 
 public class DataGenerator {
 	
+	public boolean isNumeric(String str)  
+	{  
+	  try  
+	  {  
+	    double d = Double.parseDouble(str);  
+	  }  
+	  catch(NumberFormatException nfe)  
+	  {  
+	    return false;  
+	  }  
+	  return true;  
+	}
+	
 	/**
 	 * 
 	 * @param db_name
 	 * @param table_name
 	 * @param do_gen
-	 * @param type: 1- uniform, 2- syntGDP (ground truth: 14387583), 3-realGDP, 4-solar
+	 * @param type: 1- uniform, 2- syntGDP (ground truth: 14387583), 3-realGDP, 4-solar, 5-EBM
 	 * @return
 	 * @throws Exception
 	 */
@@ -40,9 +53,6 @@ public class DataGenerator {
 			gen.loadDataset(db, table_name, type);
 			
 			if(type == 3){
-				//statement.execute("create table " + table + 
-				//		" (source_id char(30), record_id char(30)"
-				//		+ ", timestamp bigint, name char(50), value double, rank int)");
 				//Data cleaning using Wikipedia GDP data
 				db.createTable("wiki"); 
 				gen.loadDataset(db, "wiki", 2); //syntGDP
@@ -62,8 +72,9 @@ public class DataGenerator {
 	/**
 	 * type 1: uniformly distributed data items, nubmered 1 through max (e.g., 100)
 	 * type 2: State,Rank,GDP(2009),Rank,GDP(2008),Rank,GDP(2007),Rank,GDP(2006),Rank,GDP(2005)
-	 * type 3: AssignID | WorkerID | HITId | SubmitT | ApprovalT | State | GDP (cleaned with wiki GDP 2009 values)
-	 * type 4: AssignID | WorkerID | HITId | SubmitT | ApprovalT | Company | Revenue 
+	 * type 3: AssignID | WorkerID | HITId | AcceptT | SubmitT | ApprovalT | State | GDP (cleaned with wiki GDP 2009 values)
+	 * type 4: AssignID | WorkerID | HITId | AcceptT | SubmitT | ApprovalT | Company | Revenue 
+	 * type 5: AssignID | WorkerID | HITId | AcceptT | SubmitT | ApprovalT | Abs. ID | #participants
 	 * @param db
 	 * @param table
 	 * @param type
@@ -75,6 +86,8 @@ public class DataGenerator {
 		String syntGDP = "/Users/yeounoh/git/Query-Estimation/data/gdp_us.csv";
 		String realGDP = "/Users/yeounoh/git/Query-Estimation/data/GDP2012_Run1_marked.csv";
 		String inputSolar = "/Users/yeounoh/git/Query-Estimation/data/solarpanel_marked.csv";
+		String inputEVM = "/Users/yeounoh/git/Query-Estimation/data/RawResults_EVM.csv";
+		String inputEVM_App = "/Users/yeounoh/git/Query-Estimation/data/Appendicitis_EVM.csv";
 		FileInputStream fis = null; 
 		BufferedReader br = null; 
 		SimpleDateFormat t = null;
@@ -85,7 +98,9 @@ public class DataGenerator {
 			// 1~max integer values
 			int max = 100;
 			for(int i=0;i<max;i++){
-				DataItem s = new DataItem(new String[]{"",""},0,Integer.toString(i),(i+1),(max-i));
+				boolean pub_val_corr = true; //publicity-value correlated?
+				int rank = pub_val_corr ? max - i : (int) (100*Math.random() + 1); 
+				DataItem s = new DataItem(new String[]{"",""},0,Integer.toString(i+1),(i+1),(max-i));
 				db.insert(table, s);
 				cnt++;
 			}
@@ -94,7 +109,6 @@ public class DataGenerator {
 			//wikipedia GDP data
 			fis= new FileInputStream(syntGDP);
 			br= new BufferedReader(new InputStreamReader(fis));
-			
 			
 			for(int i=0;i<4;i++){
 				System.out.println(br.readLine());
@@ -117,16 +131,61 @@ public class DataGenerator {
 			
 			br.readLine(); //skip attribute names
 
+			HashMap<DataItem,Integer> data = new HashMap<DataItem,Integer>();
 			while((line = br.readLine())!=null){ 
 				String[] tokens = line.split(",");
 				String[] ids = {tokens[1],tokens[0]};
 				long timestamp = t.parse(tokens[3]).getTime();
 				double value = Double.parseDouble(tokens[7]); 
-				DataItem s = new DataItem(ids, timestamp, tokens[6], value, 0); 
-				db.insert(table, s);
-				cnt++;
+				DataItem s = new DataItem(ids, timestamp, tokens[6], value, 0);
+				data.put(s,null);
+				//db.insert(table, s);
+				//cnt++;
 			}
 			br.close();
+			
+			Object[] samples = data.keySet().toArray();
+			new QuickSort().quickSort(samples,0,samples.length-1);
+			int r = samples.length; double v = ((DataItem) samples[0]).value(); 
+			for(Object s : samples){
+				if(((DataItem) s).value() > v){
+					v = ((DataItem) s).value();
+					r--;
+				}
+				((DataItem) s).setRank(r);
+				db.insert(table, (DataItem) s);
+			}
+		}
+		else if(type == 5 || type == 6){
+			//real Evidence Based Medicine data wiht Q4 (how many participants?)
+			fis = type == 5 ? new FileInputStream(inputEVM) : new FileInputStream(inputEVM_App); 
+			br = new BufferedReader(new InputStreamReader(fis));
+			t = new SimpleDateFormat("yyyy-MM-dd'T'hh:mm:ss'Z'", Locale.ENGLISH);
+			
+			HashMap<DataItem,Integer> data = new HashMap<DataItem,Integer>();
+			while((line = br.readLine())!=null){ 
+				String[] tokens = line.split(",");
+				String[] ids = {tokens[1],tokens[0]};
+				long timestamp = t.parse(tokens[3]).getTime(); 
+				double value = Double.parseDouble(tokens[7]); 
+				DataItem s = new DataItem(ids, timestamp, tokens[6], value, 0); 
+				data.put(s,null);
+				//db.insert(table, s);
+				//cnt++;
+			}
+			br.close();
+			
+			Object[] samples = data.keySet().toArray();
+			new QuickSort().quickSort(samples,0,samples.length-1);
+			int r = samples.length; double v = ((DataItem) samples[0]).value(); 
+			for(Object s : samples){
+				if(((DataItem) s).value() > v){
+					v = ((DataItem) s).value();
+					r--;
+				}
+				((DataItem) s).setRank(r);
+				db.insert(table, (DataItem) s);
+			}
 		}
 		
 		return cnt;
