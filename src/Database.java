@@ -115,7 +115,7 @@ public class Database {
 		HashMap<Integer,String> map = new HashMap<Integer,String>();
 		Object[] result = new Object[s_size];
 		statement = connect.createStatement();
-		//System.out.println("sample by random");
+		
 		int idx= 0;
 		while(idx < s_size){
 			//sampling with replacement
@@ -142,7 +142,7 @@ public class Database {
 				int rank = resultSet.getInt("rank"); 
 				String[] ids = {source_id, record_id};
 				
-				double pdf = Math.exp(-1*(rank-1)*lambda/n_class); // always accept if lambda = 0.
+				double pdf = Math.exp(-1*(rank-1)*lambda/n_class); // always accept if lambda = 0
 				if(rand.nextDouble() <= pdf && !map.containsKey(rank)){
 					result[idx++] = new DataItem(ids, timestamp, name, value, rank);
 					if(sampling_type == 2){ //System.out.print(rank + " ");

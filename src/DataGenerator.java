@@ -35,7 +35,7 @@ public class DataGenerator {
 	 * @param db_name
 	 * @param table_name
 	 * @param do_gen
-	 * @param type: 1- uniform, 2- syntGDP (ground truth: 14387583), 3-realGDP, 4-solar, 5-EBM
+	 * @param type: 1- uniform, 2- syntGDP (ground truth: 14387583), 3-realGDP, 4-employee, 5-EBM
 	 * @return
 	 * @throws Exception
 	 */
@@ -85,16 +85,17 @@ public class DataGenerator {
 	public int loadDataset(Database db, String table, int type) throws SQLException, IOException, ParseException {
 		String syntGDP = "/Users/yeounoh/git/Query-Estimation/data/gdp_us.csv";
 		String realGDP = "/Users/yeounoh/git/Query-Estimation/data/GDP2012_Run1_marked.csv";
-		String inputSolar = "/Users/yeounoh/git/Query-Estimation/data/solarpanel_marked.csv";
+		String inputEmpl = "/Users/yeounoh/git/Query-Estimation/data/siliconvalley1_marked.csv";
 		String inputEVM = "/Users/yeounoh/git/Query-Estimation/data/RawResults_EVM.csv";
 		String inputEVM_App = "/Users/yeounoh/git/Query-Estimation/data/Appendicitis_EVM.csv";
+		String inputVLDB = "/Users/yeounoh/git/Query-Estimation/data/vldbsigmod_marked.csv";
 		FileInputStream fis = null; 
 		BufferedReader br = null; 
 		SimpleDateFormat t = null;
 		
 		String line;
 		int cnt = 0;
-		if(type == 1){
+		if(type == 1 || type == 8 || type == 9){
 			// 1~max integer values
 			int max = 100;
 			for(int i=0;i<max;i++){
@@ -124,11 +125,11 @@ public class DataGenerator {
 		}
 		else if(type == 3 || type == 4){
 			//real Amazon Mechanical Turk data
-			fis = type == 3 ? new FileInputStream(realGDP) : new FileInputStream(inputSolar); 
+			fis = type == 3 ? new FileInputStream(realGDP) : new FileInputStream(inputEmpl); 
 			br = new BufferedReader(new InputStreamReader(fis));
 			t = type == 3 ? new SimpleDateFormat("yyyy-MM-dd'T'hh:mm:ss'Z'", Locale.ENGLISH) :
 				new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", Locale.ENGLISH);
-			
+			//t = new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", Locale.ENGLISH);
 			br.readLine(); //skip attribute names
 
 			HashMap<DataItem,Integer> data = new HashMap<DataItem,Integer>();
@@ -186,6 +187,34 @@ public class DataGenerator {
 				((DataItem) s).setRank(r);
 				db.insert(table, (DataItem) s);
 			}
+		}
+		else if(type == 7){
+			//real publication data set
+			fis = new FileInputStream(inputVLDB); 
+			br = new BufferedReader(new InputStreamReader(fis));
+			t = new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", Locale.ENGLISH);
+			
+			br.readLine(); //skip attribute names
+			
+			HashMap<String,DataItem> data = new HashMap<String,DataItem>();
+			while((line = br.readLine())!=null){ 
+				String[] tokens = line.split(",");
+				String[] ids = {tokens[1],tokens[0]};
+				long timestamp = t.parse(tokens[3]).getTime(); 
+				double value = Double.parseDouble(tokens[12]); //VLDB/yr 
+				DataItem s = new DataItem(ids, timestamp, tokens[6], value, 0); 
+				if(data.containsKey(s.name())){
+					s.setRank(data.get(s.name()).rank());
+				}
+				else{
+					s.setRank(++cnt);
+				}
+				data.put(s.name(),s);
+				db.insert(table, s);
+				
+			}
+			br.close();
+			System.out.println("Data generated.");
 		}
 		
 		return cnt;

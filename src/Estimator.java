@@ -16,21 +16,25 @@ public class Estimator {
 	private int c; //unique classes in sample
 	//private int C; //total number of unique classes
 	private int[] f;
-	private HashMap<Integer, Double[]> dist;
+	private HashMap<Integer, double[]> dist;
 	private HashMap<Integer, Object> samples;
 	//private HashMap<String,HistBar> hist; 
 	private double c_sum;
 	private double f1_sum, f12_sum;
 	private double min, max;
+	
+	private int specific_item_cnt;
 		
 	public Estimator(Object[] sample){
+		specific_item_cnt = 0;
+		
 		c_sum = 0;
 		f1_sum = 0;
 		f12_sum = 0;
 		min = Double.MAX_VALUE; 
 		max = Double.MIN_VALUE;
 		//hist = new HashMap<String,HistBar>();
-		dist = new HashMap<Integer, Double[]>();
+		dist = new HashMap<Integer, double[]>(); //Double[]{count, value}
 		samples = new HashMap<Integer,Object>();
 		
 		for(Object s:sample){
@@ -44,14 +48,19 @@ public class Estimator {
 				if(val > max)
 					max = val;
 					
-				Integer k = new Integer(((DataItem) s).rank());
+				Integer k = new Integer(((DataItem) s).rank()); //rank is like a unique ID
 				if(dist.containsKey(k)){
-					Double[] v = dist.get(k);
-					dist.replace(k, new Double[]{v[0].doubleValue()+1, v[1]});
+					double[] v = dist.get(k);
+					v[0] += 1; 
+					dist.replace(k, v);
 				}
 				else{
 					c_sum += val;
-					dist.put(k, new Double[]{new Double(1), val});
+					dist.put(k, new double[]{1, val});
+				}
+				
+				if(((DataItem) s).rank() == 100){
+					specific_item_cnt++;
 				}
 			}
 		}
@@ -60,9 +69,9 @@ public class Estimator {
 		Iterator<Integer> itr = dist.keySet().iterator();
 		while(itr.hasNext()){
 			Integer k = itr.next();
-			Double[] v = dist.get(k);
-			double cnt = v[0].doubleValue();
-			double val = v[1].doubleValue();
+			double[] v = dist.get(k);
+			double cnt = v[0];
+			double val = v[1];
 			
 			if(cnt == 1){
 				f1_sum += val;
@@ -73,11 +82,13 @@ public class Estimator {
 			}
 			
 			f[(int)cnt-1] = f[(int)cnt-1]+1;
-			
-			dist.replace(k, new Double[]{v[0].doubleValue(), v[1]});
 		}
 		this.f = f;
 		this.c = dist.size(); 
+	}
+	
+	public int getSpecificItemCnt(){
+		return specific_item_cnt;
 	}
 	
 	public int getUniqueCount() {
@@ -88,6 +99,14 @@ public class Estimator {
 		double mean = 0.0;
 		for(Object s : samples.values().toArray()){
 			mean += ((DataItem) s).value();
+		}
+		return mean/n;
+	}
+	
+	public double getRankMean(){
+		double mean = 0.0;
+		for(Object s : samples.values().toArray()){
+			mean += ((DataItem) s).rank();
 		}
 		return mean/n;
 	}
@@ -132,7 +151,7 @@ public class Estimator {
 			cv = Math.max((double) c/cov*((double) sum/(double) n/(double) (n-1))-1, 0);
 		}
 				
-		return (double) c/cov + n*(1-cov)/cov*cv;
+		return Math.max((double) c/cov + n*(1-cov)/cov*cv, c);
 	}
 	
 	public double chao84(){
@@ -142,87 +161,126 @@ public class Estimator {
 		if(f.length < 2 || f[1] == 0)
 			return c;
 		
-		return c+f[0]*f[0]/2/f[1];
+		return Math.max(c+f[0]*f[0]/2/f[1], c);
 	}
 	
 	// # samples for workers: n_w[i], where i indexes worker.
-	public double MonteCarlo(double C_hat, int[] n_w, int err_type){
-		int n_sim = 100;
+	public double MonteCarlo(int C_hat, int[] n_w, boolean ideal){
+		int n_sim = 100; //simulation number
 		Random r = new Random();
 		int n_size = 0;
 		for(int i : n_w)
 			n_size += i;
 		
+		//rank items
+		//HashMap<Integer, double[]> dist_ranked = ranking(dist);
+		
 		double err_sum = 0;
 		for(int rep=0;rep<n_sim;rep++){
 			
-			HashMap<Integer,Double> simulated = new HashMap();
+			HashMap<Integer,double[]> simulated = new HashMap();
 			for(int i=0;i<n_w.length;i++){ //for each worker
-				HashMap<Integer,Double> simulated_w = new HashMap(); //without replacement
+				HashMap<Integer,double[]> simulated_w = new HashMap(); //without replacement
 				int j= 0;
 				while(j<Math.min(C_hat,n_w[i])){
 					int rank = (int) Math.floor(r.nextDouble()*C_hat) + 1; //rank instead of value
-					if(!simulated_w.containsKey(new Integer(rank))){
-						simulated_w.put(new Integer(rank), new Double(1));
+					double pdf = (double) 1/C_hat; //uniform dist
+					if(r.nextDouble() <= pdf && !simulated_w.containsKey(new Integer(rank))){
+						simulated_w.put(new Integer(rank), new double[]{1,0});
 						j++;
 						if(!simulated.containsKey(new Integer(rank)))
-							simulated.put(new Integer(rank), new Double(1));
-						else
-							simulated.replace(new Integer(rank), simulated.get(new Integer(rank)).doubleValue()+1);
+							simulated.put(new Integer(rank), new double[]{1,0});
+						else{
+							double[] v = simulated.get(rank);
+							v[0] += 1;
+							simulated.replace(new Integer(rank), v);
+						}
 					}
 				}
 			}
-			double f1_sim = 0, f2_sim = 0;
-			Iterator<Integer> keys = simulated.keySet().iterator();
-			while(keys.hasNext()){
-				Integer k = keys.next();
-				double cnt = simulated.get(k).doubleValue();
-				if(cnt == 1){
-					f1_sim++;
-				}
-				else if(cnt == 2){
-					f2_sim++;
-				}
-			} 
+			//kullback-leibler divergence
+			//the indexes of P and Q don't have the same meaning; 
+			//they just indicate that each key is an unique item within each set;
+			//but, consecutive keys are important to compare the shapes of p and q distributions
 			
-			if(err_type == 1){
-				if(f2_sim != 0)
-					err_sum += Math.abs(chao84() - (simulated.keySet().size() + f1_sim*f1_sim/2/f2_sim));
+			Set<Integer> Qkeys = simulated.keySet();
+			HashMap<Integer, double[]> dist_ranked = ideal? dist : ranking(Qkeys);
+			Set<Integer> Pkeys = dist_ranked.keySet();
+			
+			Set<Integer> PQkeys = new HashSet<Integer>();
+			PQkeys.addAll(Pkeys);
+			PQkeys.addAll(Qkeys);
+			Iterator<Integer> PQkeys_itr = PQkeys.iterator();
+			double kl = 0; //laplace smoothing taken into account
+			while(PQkeys_itr.hasNext()){
+				Integer k = PQkeys_itr.next();
+				double q= 0, p= 0;
+				if(dist_ranked.containsKey(k))
+					p = (dist_ranked.get(k)[0]+1)/(samples.size()+C_hat); //(samples.size()+PQkeys.size());
+				else
+					p = 1.0/(samples.size()+C_hat);//1.0/(samples.size()+PQkeys.size());
+
+				if(simulated.containsKey(k))
+					q = (simulated.get(k)[0]+1)/(n_size+C_hat); //(n_size+PQkeys.size());
+				else
+					q = 1.0/(n_size+C_hat); //PQkeys.size());
+
+				if(p != 0) //this is not possible with laplace smoothig, but note that 0*ln0 -> 0
+					kl += p*Math.log(p/q);
 			}
-			else if(err_type == 2){ //kullback-leibler divergence
-				Set<Integer> Pkeys = dist.keySet();
-				Set<Integer> Qkeys = simulated.keySet();
-				
-				Set<Integer> PQkeys = new HashSet<Integer>();
-				PQkeys.addAll(Pkeys);
-				PQkeys.addAll(Qkeys);
-				Iterator<Integer> PQkeys_itr = PQkeys.iterator();
-				double kl = 0; //laplace smoothing taken into account
-				while(PQkeys_itr.hasNext()){
-					Integer k = PQkeys_itr.next();
-					double q= 0, p= 0;
-					if(dist.containsKey(k))
-						p = (dist.get(k)[0].doubleValue()+1)/(samples.size()+PQkeys.size());
-					else
-						p = 1.0/(samples.size()+PQkeys.size());
-					
-					if(simulated.containsKey(k))
-						q = (simulated.get(k).doubleValue()+1)/(n_size+PQkeys.size());
-					else
-						q = 1.0/(n_size+PQkeys.size());
-					
-					if(p != 0) //this is not possible with laplace smoothig, but note that 0*ln0 -> 0
-						kl += p*Math.log(p/q);
-				}
-				err_sum += kl;
-			}
-			else if(err_type == 3){ // kendal tau distance
-				
-			}
-			else
-				err_sum = 0;
+			err_sum += kl;
+			
 		}
 		return err_sum/n_sim;
+	}
+	
+	//ranking by frequency
+	private HashMap<Integer, double[]> ranking(HashMap<Integer, double[]> dist){
+		HashMap<Integer, double[]> dist_ranked = new HashMap<Integer, double[]>();
+		
+		Object[] sorted = dist.values().toArray(); //double[] : (freq,value)
+		new QuickSort().quickSort(sorted,0,sorted.length-1); //sort by frequency
+		
+		for(int i=0;i<sorted.length;i++){
+			double[] s_ = (double[]) sorted[i];
+			//System.out.print(s_[0] + " ");
+			dist_ranked.put(new Integer(i+1), s_);
+		}
+		//System.out.println();
+		
+		return dist_ranked;
+	}
+	
+	//ranking by the simulated ranks
+	private HashMap<Integer, double[]> ranking(Set<Integer> ranks){
+		
+		HashMap<Integer, double[]> dist_ranked = new HashMap<Integer, double[]>();
+		Object[] sample = samples.values().toArray();
+		
+		Iterator<Integer> itr = ranks.iterator();
+		int rank = itr.next();
+		
+		new QuickSort().quickSort(sample,0,sample.length-1);
+		
+		double prev_value = ((DataItem) sample[sample.length-1]).value();
+		for(int i=sample.length-1;i>=0;i--){
+			int prev_rank = ((DataItem) sample[i]).rank();
+			double cur_value = ((DataItem) sample[i]).value();
+			
+			if(cur_value < prev_value){
+				prev_value = cur_value;
+				if(itr.hasNext()){
+					rank = itr.next();
+				}
+				else{
+					rank++;
+				}
+			}
+			
+			double[] cnt_value = dist.get(prev_rank);
+			dist_ranked.put(rank, cnt_value);
+		}
+		return dist_ranked;
 	}
 	
 	//if f-1 is the best indicator of the missing classes, and we have very skewed value distribution, then 
@@ -238,7 +296,7 @@ public class Estimator {
 		if(c == 0 || (f[0]+f[1]) == 0)
 			return c_sum;
 		
-		return (double) c_sum + f12_sum/c*(chao92()-c);
+		return (double) c_sum + f12_sum/(f[0] + f[1])*(chao92()-c);
 	}
 	
 	public double csum(){
@@ -249,7 +307,14 @@ public class Estimator {
 		if(c == 0)
 			return c_sum;
 		
-		return (double) c_sum + f1_sum/c*(C_hat-c);
+		return (double) c_sum + c_sum/c*(C_hat-c);
+	}
+	
+	public double sumf1Est(int C_hat){
+		if(c == 0 || f[0] == 0)
+			return c_sum;
+		
+		return (double) c_sum + f1_sum/(double) f[0] * (C_hat - c);
 	}
 	
 	public double sumEst(){
@@ -314,15 +379,6 @@ public class Estimator {
 		buckets.add(init_b);
 		
 		while(buckets.size() > nbkt_prev){
-			/**
-			//To monitor splitting processes
-			String desc = "";
-			for(Bucket b : buckets){
-				//desc += "["+ b.getLowerB() + "," + b.getUpperB()+"]"+b.getCoeffVar()+", "+b.getCount();
-				desc += "["+ b.getLowerB() + "," + b.getUpperB()+"] "+b.getCount();
-			}
-			System.out.println(desc);
-			*/
 			nbkt_prev = buckets.size(); 
 			ArrayList<Bucket> toAdd = new ArrayList<Bucket>();
 			Iterator<Bucket> itr = buckets.iterator();
@@ -399,7 +455,9 @@ public class Estimator {
 			buckets.addAll(toAdd);
 		}
 		
-		Bucket[] output = new Bucket[buckets.size()];
-		return buckets.toArray(output);
+		Bucket[] output = buckets.toArray(new Bucket[buckets.size()]);
+		new QuickSort().quickSort(output,0,output.length-1);
+		
+		return output;
 	}
 }

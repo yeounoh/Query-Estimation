@@ -146,6 +146,11 @@ public class Bucket {
 		return est.sumEst();
 	}
 	
+	public double countEst(){
+		Estimator est = new Estimator(samples.values().toArray());
+		return est.chao92();
+	}
+	
 	public double max(){
 		Estimator est = new Estimator(samples.values().toArray());
 		return est.getMax();
@@ -163,6 +168,20 @@ public class Bucket {
 			max = max_orig;
 		}
 		return max;
+	}
+	
+	public double minEst(){
+		Estimator est = new Estimator(samples.values().toArray());
+		double min = 0.0;
+		double min_orig = est.getMin();
+		if(est.chao92() > c){
+			min = Math.max(est.getSampleMean() - 2*est.getSampleStd(), 0);
+			min = min < min_orig? min:min_orig;
+		}
+		else{
+			min = min_orig;
+		}
+		return min;
 	}
 	
 	public Collection<Object> getSamples(){

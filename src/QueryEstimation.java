@@ -1,6 +1,7 @@
 import java.awt.List;
 import java.io.BufferedWriter;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
@@ -65,7 +66,7 @@ public class QueryEstimation {
 		double[] csum_by_bucket = new double[buckets.length];
 		
 		double sum_t = 0, cnt_t = 0, uniq_t = 0, chao_t = 0, avg_sc = 0, avg_cv = 0, csum_t = 0;
-		double avg_t = 0;
+		double avg_t = 0, cavg_t;
 		for(int bi=0;bi<buckets.length;bi++){
 			Object[] samples_b = buckets[bi].getSamples().toArray();
 			est = new Estimator(samples_b);
@@ -75,7 +76,7 @@ public class QueryEstimation {
 			sc_by_bucket[bi] = buckets[bi].getSampleCov();
 			cv_by_bucket[bi] = buckets[bi].getCoeffVar();
 			chao_by_bucket[bi] = est.chao92();
-			csum_by_bucket[bi] = est.chao84();//est.csum();
+			csum_by_bucket[bi] = est.csum();
 			
 			cnt_t += cnt_by_bucket[bi];
 			uniq_t += est.getUniqueCount();
@@ -86,65 +87,158 @@ public class QueryEstimation {
 			avg_cv += cv_by_bucket[bi] * (double) samples_b.length/sample.length;
 		}
 		avg_t = sum_t/chao_t;
+		cavg_t = csum_t/uniq_t;
 		double max_orig = est.getMax();
 		double max_est = buckets[buckets.length-1].maxEst();
+		double min_orig = est.getMin();
+		double min_est = buckets[0].minEst();
 		double[] cnt = {cnt_t, uniq_t, chao_t, buckets.length};
 		double[] sum = {sum_t, csum_t};
 		double[] measure = {avg_sc, avg_cv};
-		double[] other = {avg_t, max_orig, max_est};
+		double[] other = {avg_t, max_orig, max_est, cavg_t, min_orig, min_est,est.getSpecificItemCnt()};
 		
 		return new Result(cnt, sum, measure, other);
 	}
 	
-	public Result MonteCarloApproach(Object[] sample, int[] n_w, int sweep){
+	/**
+	 * 
+	 * @param sample
+	 * @param n_bkt
+	 * @param th CV threshold to how much data skew to tolerate per bucket
+	 * @param n_worker: number of worker for monte carlo method
+	 * @param est_type: 0- chao92-based, 1- f1-based, 2- f12-based, 3- MC-based
+	 * @return
+	 * @throws IOException 
+	 */
+	public Result bucketMCApproach(Object[] sample, int[] n_w, double th, int est_type,boolean ideal) throws IOException{
+		Bucket[] buckets= null; //number of buckets may vary
 		Estimator est = new Estimator(sample);
-		int c_hat = 100;//(int) Math.ceil(est.chao92());
-		double[] error = new double[sweep/2*2];
-		double[] sum_est = new double[sweep/2*2];
-		double[] cnts = new double[sweep/2*2];
-		for(int i=c_hat-sweep/2;i<c_hat+sweep/2;i++){
-			cnts[i-(c_hat-sweep/2)] = i;
-			error[i-(c_hat-sweep/2)] = est.MonteCarlo(i, n_w, 2);
-			sum_est[i-(c_hat-sweep/2)] = est.sumEst(i);
+		
+		int n = sample.length;
+		
+		buckets = est.autoBuckets(th, sample);
+		
+		double[] sum_by_bucket = new double[buckets.length];
+		double[] cnt_by_bucket = new double[buckets.length]; //number of samples
+		double[] chao_by_bucket = new double[buckets.length]; //uniq items number estimation
+		double[] csum_by_bucket = new double[buckets.length];
+		
+		double sum_t = 0, cnt_t = 0, uniq_t = 0, chao_t = 0, avg_sc = 0, avg_cv = 0, csum_t = 0;
+		double avg_t = 0, cavg_t;
+		for(int bi=0;bi<buckets.length;bi++){
+			Object[] samples_b = buckets[bi].getSamples().toArray();
+			est = new Estimator(samples_b);
+			
+			int n_b = samples_b.length;
+			
+			cnt_by_bucket[bi] = samples_b.length; 
+			
+			int sample_left = n_b;
+			int[] n_w_b = new int[n_w.length];
+			for(int i=0;i<n_w.length;i++){
+				n_w_b[i] = (int) Math.min(Math.ceil((double) n_w[i] * ((double) n_b/n)),sample_left);
+				sample_left -= n_w_b[i];
+			}
+			if(sample_left > 0)
+				n_w_b[0] += sample_left;
+			
+			double[] mc = MonteCarloApproach(samples_b, n_w_b, est_type,ideal).summary();
+			sum_by_bucket[bi] =  mc[1];
+			chao_by_bucket[bi] = mc[0];
+			csum_by_bucket[bi] = est.csum();
+			
+			cnt_t += cnt_by_bucket[bi];
+			uniq_t += est.getUniqueCount();
+			chao_t += chao_by_bucket[bi];
+			sum_t += sum_by_bucket[bi];
+			csum_t += csum_by_bucket[bi];
 		}
-		double min_err = Double.MAX_VALUE, best_est = 0, best_cnt= 0;
-		for(int i=0;i<error.length;i++){
-			if(min_err > error[i]){
-				best_cnt = cnts[i];
-				min_err = error[i];
-				best_est = sum_est[i];
+		avg_t = sum_t/chao_t;
+		cavg_t = csum_t/uniq_t;
+		double[] cnt = {cnt_t, uniq_t, chao_t, buckets.length};
+		double[] sum = {sum_t, csum_t};
+		double[] measure = {avg_sc, avg_cv};
+		double[] other = {avg_t,cavg_t};
+		
+		return new Result(cnt, sum, measure, other);
+	}
+	
+	public Result MonteCarloApproach(Object[] sample, int[] n_w, int est_type, boolean ideal) throws IOException {
+		Estimator est = new Estimator(sample);
+		double best_est = 0, best_cnt= 0;
+		
+		double error = Double.MAX_VALUE;
+		int width = (int) est.chao92()/5;
+		int cnt_lb = Math.max(est.getUniqueCount(), (int) Math.floor(est.chao92() - width));
+		int cnt_ub = (int) Math.ceil(est.chao92() + width);
+		for(int i=cnt_lb;i<=cnt_ub;i++){
+			double error_b = Double.MAX_VALUE;
+			double new_error = est.MonteCarlo(i, n_w, ideal);
+			if(error_b < new_error)
+				break;
+			else
+				error_b = new_error;
+			
+			double new_est = est_type == 0? est.sumEst(i) : est.sumf1Est(i);
+			
+			if(error > new_error){
+				best_cnt = i;
+				error = new_error;
+				best_est = new_est;
+				//System.out.println(error + "@(" + i + ")");
 			}
 		}
 		
 		double[] cnt = {best_cnt};
 		double[] sum = {best_est};
 		double[] measure = {};
-		double[] other = {best_est/best_cnt};
+		double[] other = {best_est/best_cnt}; //, best_lambda};
 		
 		return new Result(cnt, sum, measure, other);
 	}
 	
-	public Result MonteCarloSimulation(Object[] sample, int[] n_w, int sweep){
-		Estimator est = new Estimator(sample);
-		int c_hat = (int) Math.ceil(est.chao92());
-		double[] cnts = new double[(sweep/2*2)];
-		double[] error = new double[(sweep/2*2)];
-		double[] sum_est = new double[(sweep/2*2)];
-		for(int i=c_hat-sweep/2;i<c_hat+sweep/2;i++){
-			cnts[i-(c_hat-sweep/2)] = i;
-			error[i-(c_hat-sweep/2)] = est.MonteCarlo(i, n_w, 2);
-			sum_est[i-(c_hat-sweep/2)] = est.sumEst(i);
-		}
-		
-		double[] cnt = cnts;
-		double[] sum = sum_est;
-		double[] measure = error;
-		double[] other = {};
-		
-		return new Result(cnt, sum, measure, other);
-	}
+//	public Result MonteCarloApproach(Object[] sample, int[] n_w, int n_itr, int est_type) throws IOException {
+//		Estimator est = new Estimator(sample);
+//		double best_est = 0, best_cnt= 0, best_lambda = 0;
+//		
+//		double error = Double.MAX_VALUE;
+//		double alpha = 0.03;
+//		int width = (int) est.chao92()/5;
+//		int cnt_lb = Math.max(est.getUniqueCount(), (int) Math.floor(est.chao92() - width));
+//		int cnt_ub = (int) Math.ceil(est.chao92() + width);
+//		for(int i=cnt_lb;i<cnt_ub;i++){
+//			double lambda = 1; //initial value
+//			double error_b = Double.MAX_VALUE;
+//			for(double j=0;j<n_itr;j++){
+//				lambda = Math.max(lambda - alpha / i * est.getRankMean(), 0); //lower bound at 0
+//				
+//				double new_error = est.MonteCarlo(i, lambda, n_w);
+//				if(error_b < new_error)
+//					break;
+//				else
+//					error_b = new_error;
+//				
+//				double new_est = est_type == 0? est.sumEst(i) : est.sumf1Est(i);
+//				
+//				if(error > new_error){
+//					best_cnt = i;
+//					error = new_error;
+//					best_est = new_est;
+//					best_lambda = lambda;
+//					//System.out.println(error + "@(" + i + "," + lambda+")");
+//				}
+//			}
+//		}
+//		
+//		double[] cnt = {best_cnt};
+//		double[] sum = {best_est};
+//		double[] measure = {};
+//		double[] other = {best_est/best_cnt}; //, best_lambda};
+//		
+//		return new Result(cnt, sum, measure, other);
+//	}
 	
-	public void runExperiment(Configuration conf, int mc_simul) throws Exception{
+	public void runExperiment(Configuration conf) throws Exception{
 		boolean do_gen = true;
 		int n_class = 0; // ground truth for C (# of species), used for random sample generation
 		String fname = "./result/";
@@ -152,14 +246,24 @@ public class QueryEstimation {
 			case 1: fname += "uniform.txt"; break;
 			case 2: fname += "syntGDP.txt"; break;
 			case 3: fname += "realGDP.txt"; break;
-			case 4: fname += "solar.txt"; break;
+			case 4: fname += "employee.txt"; break;
 			case 5: fname += "evm.txt"; break;
 			case 6: fname += "evm_app.txt"; break;
+			case 7: fname += "VLDB.txt"; break;
+			case 8: fname += "uniform_w"+ conf.n_worker + ".txt"; break;
+			case 9: fname += "uniform_l"+ conf.lambda + ".txt"; break;
 			default: fname += "N/S.txt"; break;
 		}
+		if(conf.st_only)
+			fname += "_only";
+		else if(conf.st_inject)
+			fname += "_inject";
 		
-		if(conf.data_type == 1 || conf.data_type == 2){
-			n_class = conf.data_type == 1 ? 100 : 50;
+		if(conf.data_type == 1 || conf.data_type == 2 || conf.data_type == 8 || conf.data_type == 9){
+			if(conf.data_type == 2)
+				n_class = 50;
+			else
+				n_class = 100;
 		}
 		
 		Database db = new DataGenerator().generateDataset(conf.db_name, conf.tb_name, do_gen, conf.data_type);
@@ -169,31 +273,38 @@ public class QueryEstimation {
 		double[][][] naivef1_rep = new double[conf.s_size.length][conf.n_rep][];
 		
 		//method2: bucket
-		double[][][] bkt_rep = new double[conf.s_size.length][conf.n_rep][]; 
-		double[][][] bktf1_rep = new double[conf.s_size.length][conf.n_rep][];
+//		double[][][] bkt_rep = new double[conf.s_size.length][conf.n_rep][]; 
+//		double[][][] bktf1_rep = new double[conf.s_size.length][conf.n_rep][];
 		double[][][] bkt_auto_rep = new double[conf.s_size.length][conf.n_rep][]; 
 		double[][][] bktf1_auto_rep = new double[conf.s_size.length][conf.n_rep][];
 		
 		//method3: Monte-Carlo Simulation
 		double[][][] mc_app_rep = new double[conf.s_size.length][conf.n_rep][];
-		double[][][] mc_rep = mc_simul == 1? new double[conf.s_size.length][conf.n_rep][] : null;
-		int sweep = 20;
+		double[][][] mcf1_app_rep = new double[conf.s_size.length][conf.n_rep][];
+		double[][][] mc_app_ideal_rep = new double[conf.s_size.length][conf.n_rep][];
+		double[][][] mcf1_app_ideal_rep = new double[conf.s_size.length][conf.n_rep][];
+		
+		//method4: Monte-Carlo Bucket Simulation
+		double[][][] mcbkt_rep = new double[conf.s_size.length][conf.n_rep][];
+		double[][][] mcbktf1_rep = new double[conf.s_size.length][conf.n_rep][];
+		double[][][] mcbkt_ideal_rep = new double[conf.s_size.length][conf.n_rep][];
+		double[][][] mcbktf1_ideal_rep = new double[conf.s_size.length][conf.n_rep][];
 		
 		for(int ri=0;ri<conf.n_rep;ri++){
 			System.out.print("."); //progress meter
-			for(int si=0;si<conf.s_size.length;si++){
+			for(int si=0;si<conf.s_size.length;si++){ System.out.println(si + "/" +conf.s_size.length);
 				//data samples to run experiments
 				Object[] sample = null;
 				int[] n_w = null;
 				int assigned_sample = 0;
 				
 				//synthetic data experiment
-				if(conf.data_type == 1 || conf.data_type == 2){
+				if(conf.data_type == 1 || conf.data_type == 2 || conf.data_type == 8 || conf.data_type == 9){ 
 					n_w = new int[conf.n_worker];
 					ArrayList<Object> samples = new ArrayList<Object>();
 					
-					boolean streaker_only = false;
-					boolean inject_streaker = false;
+					boolean streaker_only = conf.st_only; //default: false
+					boolean inject_streaker = conf.st_inject; //default: false
 					boolean injected = false;
 					for(int i=0;i<conf.n_worker;i++){
 						if(streaker_only){
@@ -226,7 +337,7 @@ public class QueryEstimation {
 						assigned_sample += n_w[i];
 						
 						Object[] s_worker = db.sampleByRandom(n_w[i], conf.tb_name, n_class, 
-								conf.sampling_type, conf.lambda);
+								conf.sampling_type, conf.lambda); 
 						for(Object s : s_worker){
 							samples.add(s); 
 						}
@@ -261,28 +372,43 @@ public class QueryEstimation {
 				Result naive_f1 = bucketApproach(sample, 1, 0.0, 1, 1);
 				
 				//ER fixed approach
-				Result bkt = bucketApproach(sample, 5, 0.0, 1, 0);
-				Result bktf1 = bucketApproach(sample, 5, 0.0, 1, 1);
+				//Result bkt = bucketApproach(sample, 5, 0.0, 1, 0);
+				//Result bktf1 = bucketApproach(sample, 5, 0.0, 1, 1);
 				
 				//ER auto approach
 				Result bkt_auto = bucketApproach(sample, 0, 0.05, 2, 0);
 				Result bktf1_auto = bucketApproach(sample, 0, 0.05, 2, 1);
 				
 				//Monte-Carlo Simulation
-				Result mc = mc_simul == 1? MonteCarloSimulation(sample, n_w, sweep) : null;
-				Result mc_app = MonteCarloApproach(sample, n_w, sweep);
+				int n_itr = 100;
+				Result mc_app = MonteCarloApproach(sample, n_w, 0, false);
+				Result mcf1_app = MonteCarloApproach(sample, n_w, 1, false);
+//				Result mc_app = MonteCarloApproach(sample, n_w, n_itr, 0); //with data skew (GD)
+//				Result mcf1_app = MonteCarloApproach(sample, n_w, n_itr, 1); //wih data skew (GD)
+//				Result mc_app_ideal = MonteCarloApproach(sample, n_w, 0, true);
+//				Result mcf1_app_ideal = MonteCarloApproach(sample, n_w, 1, true);
+				
+				//Monte-Carlo bucket simulation
+				Result mcbkt = bucketMCApproach(sample, n_w, 0.05, 0, false);
+				Result mcbktf1 = bucketMCApproach(sample, n_w, 0.05, 1, false);
+//				Result mcbkt_ideal = bucketMCApproach(sample, n_w, 0.05, 0, true);
+//				Result mcbktf1_ideal = bucketMCApproach(sample, n_w, 0.05, 1, true);
 				
 				//estimate population statistics
 				naive_rep[si][ri] = naive.summary();
 				naivef1_rep[si][ri] = naive_f1.summary();
-				bkt_rep[si][ri] = bkt.summary();
-				bktf1_rep[si][ri] = bktf1.summary();
-				bkt_auto_rep[si][ri] = bkt_auto.summary();
+				//bkt_rep[si][ri] = bkt.summary(); 
+				//bktf1_rep[si][ri] = bktf1.summary();
+				bkt_auto_rep[si][ri] = bkt_auto.summary(); 
 				bktf1_auto_rep[si][ri] = bktf1_auto.summary();
-				if(mc_simul == 1){
-					mc_rep[si][ri] = mc.summary();
-				}
-				mc_app_rep[si][ri] = mc_app.summary();
+				mc_app_rep[si][ri] = mc_app.summary(); 
+				mcf1_app_rep[si][ri] = mcf1_app.summary(); 
+//				mc_app_ideal_rep[si][ri] = mc_app_ideal.summary(); 
+//				mcf1_app_ideal_rep[si][ri] = mcf1_app_ideal.summary(); 
+				mcbkt_rep[si][ri] = mcbkt.summary();
+				mcbktf1_rep[si][ri] = mcbktf1.summary();
+//				mcbkt_ideal_rep[si][ri] = mcbkt_ideal.summary();
+//				mcbktf1_ideal_rep[si][ri] = mcbktf1_ideal.summary();
 			}
 		}
 	
@@ -291,78 +417,89 @@ public class QueryEstimation {
 		bw.write("0:s_size | 1:naive_avg | 2:naive_std | 3:naivef1 | 4:naivef1_std | 5:bkt_avg | 6:bkt_std | 7:bktf1_avg | 8:bktf1_std | "
 				+ "9:bktauto_avg | 10:bktauto_std | 11:bktf1auto_avg | 12:bktf1auto_std | 13:uniq_avg | 14:uniq_std | 15:nbktauto_avg | 16:nbktf1auto_avg |"
 				+ "17:mc_avg | 18:mc_std | 19:chao_avg | 20:chao_std | 21:csum_avg | 22:csum_std | 23:naive_avg_avg | 24:naivef1_avg_avg |"
-				+ "25:bkt_avg_avg | 26:bktf1_avg_avg | 27:bktauto_avg_avg | 28:bktf1auto_avg_avg | 29:mc_avg_avg | 30:max_orig_avg | 31:max_est_avg |");
+				+ "25:bkt_avg_avg | 26:bktf1_avg_avg | 27:bktauto_avg_avg | 28:bktf1auto_avg_avg | 29:mc_avg_avg | 30:max_orig_avg | 31:max_est_avg |"
+				+ "32:naive_cavg_avg | 33:mcf1_avg | 34:mcf1_std | 35:mcf1_avg_avg | 36:min_orig_avg | 37:min_est_avg | 38:mcbucket_avg | 39:mcbucketf1_avg | "
+				+ "40:mcbucket_avg_avg | 41:mcbucketf1_avg_avg | 42:mc_avg_ideal | 43:mcf1_avg_ideal | 44:mcbucket_avg_ideal | 45:mcbucketf1_avg_ideal | 46: specific_item_cnt");
 		bw.newLine();
 		bw.flush();
 		
-		//Monte-Carlo simulation
-		FileOutputStream fos_mc= mc_simul == 1? new FileOutputStream(fname+"_mc") : null;
-		BufferedWriter bw_mc= mc_simul == 1? new BufferedWriter(new OutputStreamWriter(fos_mc)) : null;
-		if(mc_simul == 1){
-			bw_mc.write("s_size | cnts ... | sums ... | errs ... |");
-			bw_mc.newLine();
-			bw_mc.flush();
-		}
 		for(int si=0;si<conf.s_size.length;si++){
-			double avg_csum=0, std_csum=0;
-			double avg=0, avg_f1=0, avg_bkt=0, avg_bktf1=0, avg_bkt_auto=0, avg_bktf1_auto=0, avg_uniq=0, avg_chao=0, avg_mc_app=0;
-			double std=0, std_f1=0, std_bkt=0, std_bktf1=0, std_bkt_auto=0, std_bktf1_auto=0, std_uniq=0, std_chao=0, std_mc_app=0;
-			double avg_nbktauto=0, avg_nbktf1auto=0, avg_max_orig=0, avg_max_est=0;
+			double avg_csum=0, std_csum=0, avg_cavg=0;
+			double avg=0, avg_f1=0, avg_bkt=0, avg_bktf1=0, avg_bkt_auto=0, avg_bktf1_auto=0, avg_uniq=0, avg_chao=0, avg_mc_app=0, avg_mcf1_app=0, avg_mcbkt=0, avg_mcbktf1=0, avg_mc_ideal=0, avg_mcf1_ideal=0, avg_mcbkt_ideal=0, avg_mcbktf1_ideal=0;
+			double std=0, std_f1=0, std_bkt=0, std_bktf1=0, std_bkt_auto=0, std_bktf1_auto=0, std_uniq=0, std_chao=0, std_mc_app=0, std_mcf1_app=0;
+			double avg_nbktauto=0, avg_nbktf1auto=0, avg_max_orig=0, avg_max_est=0, avg_min_orig=0, avg_min_est=0;
 			
-			double[] avg_mc_cnt = mc_simul == 1 ? new double[sweep] : null;
-			double[] avg_mc_sum = mc_simul == 1 ? new double[sweep] : null;
-			double[] avg_mc_err = mc_simul == 1 ? new double[sweep] : null;
+			double avg_spec_cnt=0;
 			
-			double avg_avg=0, avg_avg_f1=0, avg_avg_bkt=0, avg_avg_bktf1=0, avg_avg_bkt_auto=0,avg_avg_bktf1_auto=0,avg_avg_mc_app=0;
+			double avg_avg=0, avg_avg_f1=0, avg_avg_bkt=0, avg_avg_bktf1=0, avg_avg_bkt_auto=0,avg_avg_bktf1_auto=0,avg_avg_mc_app=0, avg_avg_mcf1_app=0, avg_avg_mcbkt=0, avg_avg_mcbktf1=0;
 			for(int ri=0;ri<conf.n_rep;ri++){
 				avg_csum += naive_rep[si][ri][5]/conf.n_rep;
+				avg_cavg += naive_rep[si][ri][11]/conf.n_rep;
+				
 				avg += naive_rep[si][ri][4]/conf.n_rep;
 				avg_avg += naive_rep[si][ri][8]/conf.n_rep;
 				avg_f1 += naivef1_rep[si][ri][4]/conf.n_rep;
 				avg_avg_f1 += naivef1_rep[si][ri][8]/conf.n_rep;
-				avg_bkt += bkt_rep[si][ri][4]/conf.n_rep;
-				avg_avg_bkt += bkt_rep[si][ri][8]/conf.n_rep;
-				avg_bktf1 += bktf1_rep[si][ri][4]/conf.n_rep;
-				avg_avg_bktf1 += bktf1_rep[si][ri][8]/conf.n_rep;
+				avg_spec_cnt += naive_rep[si][ri][14]/conf.n_rep;
+				
+				//avg_bkt += bkt_rep[si][ri][4]/conf.n_rep;
+				//avg_avg_bkt += bkt_rep[si][ri][8]/conf.n_rep;
+				//avg_bktf1 += bktf1_rep[si][ri][4]/conf.n_rep;
+				//avg_avg_bktf1 += bktf1_rep[si][ri][8]/conf.n_rep;
+				
 				avg_bkt_auto += bkt_auto_rep[si][ri][4]/conf.n_rep;
 				avg_avg_bkt_auto += bkt_auto_rep[si][ri][8]/conf.n_rep;
 				avg_bktf1_auto += bktf1_auto_rep[si][ri][4]/conf.n_rep;
 				avg_avg_bktf1_auto += bktf1_auto_rep[si][ri][8]/conf.n_rep;
+				
 				avg_uniq += naive_rep[si][ri][1]/conf.n_rep;
+				
 				avg_nbktauto += bkt_auto_rep[si][ri][3]/conf.n_rep;
 				avg_nbktf1auto += bktf1_auto_rep[si][ri][3]/conf.n_rep;
+				
 				avg_chao += naive_rep[si][ri][2]/conf.n_rep;
+				
 				avg_mc_app += mc_app_rep[si][ri][1]/conf.n_rep;
+				avg_mcf1_app += mcf1_app_rep[si][ri][1]/conf.n_rep;
 				avg_avg_mc_app += mc_app_rep[si][ri][2]/conf.n_rep;
+				avg_avg_mcf1_app += mcf1_app_rep[si][ri][2]/conf.n_rep;
+//				avg_mc_ideal += mc_app_rep[si][ri][1]/conf.n_rep;
+//				avg_mcf1_ideal += mcf1_app_rep[si][ri][1]/conf.n_rep;
+				
 				avg_max_orig += bkt_auto_rep[si][ri][9]/conf.n_rep;
 				avg_max_est += bkt_auto_rep[si][ri][10]/conf.n_rep;
+				avg_min_orig += bkt_auto_rep[si][ri][12]/conf.n_rep;
+				avg_min_est += bkt_auto_rep[si][ri][13]/conf.n_rep;
 				
-				if(mc_simul == 1){
-					for(int i=0;i<sweep;i++){
-						avg_mc_cnt[i] += mc_rep[si][ri][i]/conf.n_rep;
-						avg_mc_sum[i] += mc_rep[si][ri][i+sweep]/conf.n_rep;
-						avg_mc_err[i] += mc_rep[si][ri][i+(2*sweep)]/conf.n_rep; 
-					}
-				}
+				avg_mcbkt += mcbkt_rep[si][ri][4]/conf.n_rep;
+				avg_mcbktf1 += mcbktf1_rep[si][ri][8]/conf.n_rep;
+//				avg_mcbkt_ideal += mcbkt_ideal_rep[si][ri][4]/conf.n_rep;
+//				avg_mcbktf1_ideal += mcbktf1_ideal_rep[si][ri][8]/conf.n_rep;
+				avg_avg_mcbkt += mcbkt_rep[si][ri][4]/conf.n_rep;
+				avg_avg_mcbktf1 += mcbktf1_rep[si][ri][8]/conf.n_rep;
 			}
 			
 			for(int ri=0;ri<conf.n_rep;ri++){
 				std_csum += (naive_rep[si][ri][5]-avg_csum)*(naive_rep[si][ri][5]-avg_csum);
 				std += (naive_rep[si][ri][4]-avg)*(naive_rep[si][ri][4]-avg);
 				std_f1 += (naivef1_rep[si][ri][4]-avg_f1)*(naivef1_rep[si][ri][4]-avg_f1);
-				std_bkt += (bkt_rep[si][ri][4]-avg_bkt)*(bkt_rep[si][ri][4]-avg_bkt);
-				std_bktf1 += (bktf1_rep[si][ri][4]-avg_bktf1)*(bktf1_rep[si][ri][4]-avg_bktf1);
+				//std_bkt += (bkt_rep[si][ri][4]-avg_bkt)*(bkt_rep[si][ri][4]-avg_bkt);
+				//std_bktf1 += (bktf1_rep[si][ri][4]-avg_bktf1)*(bktf1_rep[si][ri][4]-avg_bktf1);
 				std_bkt_auto += (bkt_auto_rep[si][ri][4]-avg_bkt_auto)*(bkt_auto_rep[si][ri][4]-avg_bkt_auto);
 				std_bktf1_auto += (bktf1_auto_rep[si][ri][4]-avg_bktf1_auto)*(bktf1_auto_rep[si][ri][4]-avg_bktf1_auto);
 				std_uniq += (naive_rep[si][ri][1]-avg_uniq)*(naive_rep[si][ri][1]-avg_uniq);
 				std_chao += (naive_rep[si][ri][2]-avg_chao)*(naive_rep[si][ri][2]-avg_chao);
 				std_mc_app += (mc_app_rep[si][ri][0]-avg_mc_app)*(mc_app_rep[si][ri][0]-avg_mc_app);
+				std_mcf1_app += (mcf1_app_rep[si][ri][0]-avg_mcf1_app)*(mcf1_app_rep[si][ri][0]-avg_mcf1_app);
 			}
 			std_csum = Math.sqrt(std_csum/conf.n_rep);
-			std = Math.sqrt(std/conf.n_rep); std_f1 = Math.sqrt(std_f1/conf.n_rep); std_bkt = Math.sqrt(std_bkt/conf.n_rep);
-			std_bktf1 = Math.sqrt(std_bktf1/conf.n_rep); std_bkt_auto = Math.sqrt(std_bkt_auto/conf.n_rep); 
+			std = Math.sqrt(std/conf.n_rep); std_f1 = Math.sqrt(std_f1/conf.n_rep); 
+			//std_bkt = Math.sqrt(std_bkt/conf.n_rep);
+			//std_bktf1 = Math.sqrt(std_bktf1/conf.n_rep); 
+			std_bkt_auto = Math.sqrt(std_bkt_auto/conf.n_rep); 
 			std_bktf1_auto = Math.sqrt(std_bktf1_auto/conf.n_rep); std_uniq = Math.sqrt(std_uniq/conf.n_rep);
 			std_chao = Math.sqrt(std_chao/conf.n_rep); std_mc_app = Math.sqrt(std_mc_app/conf.n_rep);
+			std_mcf1_app = Math.sqrt(std_mcf1_app/conf.n_rep);
 			
 			DecimalFormat df = new DecimalFormat("#.00");
 			bw.write(conf.s_size[si] + " " + df.format(avg) + " " + df.format(std) + " " + df.format(avg_f1) 
@@ -374,57 +511,86 @@ public class QueryEstimation {
 					+ " " + df.format(avg_mc_app) + " " + df.format(std_mc_app)
 					+ " " + df.format(avg_chao) + " " + df.format(std_chao)
 					+ " " + df.format(avg_csum) + " " + df.format(std_csum)
-					+ " " + df.format(avg_avg) + " " + df.format(avg_avg_f1) + df.format(avg_avg_bkt) + df.format(avg_avg_bktf1)
-					+ " " + df.format(avg_avg_bkt_auto) + df.format(avg_avg_bktf1_auto) + df.format(avg_avg_mc_app)
-					+ " " + df.format(avg_max_orig) + " " + df.format(avg_max_est));
+					+ " " + df.format(avg_avg) + " " + df.format(avg_avg_f1) + " " + df.format(avg_avg_bkt) + " " +df.format(avg_avg_bktf1)
+					+ " " + df.format(avg_avg_bkt_auto) + " " + df.format(avg_avg_bktf1_auto) + " " + df.format(avg_avg_mc_app)
+					+ " " + df.format(avg_max_orig) + " " + df.format(avg_max_est) + " " + df.format(avg_cavg)
+					+ " " + df.format(avg_mcf1_app) + " " + df.format(std_mcf1_app) + " " + df.format(avg_avg_mcf1_app)
+					+ " " + df.format(avg_min_orig) + " " + df.format(avg_min_est)
+					+ " " + df.format(avg_mcbkt) + " " + df.format(avg_mcbktf1)
+					+ " " + df.format(avg_avg_mcbkt) + " " + df.format(avg_avg_mcbktf1)
+					+ " " + df.format(avg_mc_ideal) + " " + df.format(avg_mcf1_ideal)
+					+ " " + df.format(avg_mcbkt_ideal) + " " + df.format(avg_mcbktf1_ideal) + " " + df.format(avg_spec_cnt));
 			bw.newLine();
 			bw.flush();
-			
-			if(mc_simul == 1){
-				String mc_cnt=""; String mc_sum =""; String mc_err = ""; 
-				for(int i=0;i<sweep;i++){
-					mc_cnt += df.format(avg_mc_cnt[i]) + " ";
-					mc_sum += df.format(avg_mc_sum[i]) + " ";
-					mc_err += df.format(avg_mc_err[i]) + " ";
-				}
-				bw_mc.write(conf.s_size[si] + " " + mc_cnt + " " + mc_sum + " " + mc_err);
-				bw_mc.newLine();
-				bw_mc.flush();
-			}
 		}
-		bw.close();
-		if(mc_simul == 1)
-			bw_mc.close();
 	}
 	
 	public static void main(String[] args){
 		//experimental setup: Configuration(String db_name, String tb_name, int data_type, int n_rep, int[] s_size)
-		int[] s_size1 = {20,80,140,200,260,320,380,440,500,560,620,1000};//{10,20,30,40,50,60,70,80,90,100};//{20,40,60,80,100,120,140,160,180,200,220,240,260,280,300,320,340,360,380,400,420,440,460,480};//
-		int[] s_size2 = {20,40,60,80,100,120,140,160,180,200,220,240,260,280,300,320,340,360,380,400,420,440,460,480,500};
-		Configuration config1 = new Configuration("synt_db","unif",1,100,s_size1);
-		config1.extraParam(20, 2, 0.5); //change the last parameter to adjust the correlation level
-		Configuration config2 = new Configuration("synt_db","gdp",2,100,s_size2);
-		config2.extraParam(20, 2, 0.5);
+		Configuration config1;
 		
-		int[] s_size3 = incrementalSamples(496,20);
-		int[] s_size4 = incrementalSamples(327,20);
+//		int[] s_size2 = {20,40,60,80,100,120,140,160,180,200,220,240,260,280,300,320,340,360,380,400,420,440,460,480,500};
+//		Configuration config2 = new Configuration("synt_db","gdp",2,50,s_size2);
+//		config2.extraParam(20, 2, 0.5, false, false);
+		
+		int[] s_size3 = incrementalSamples(496,20); //496
+		int[] s_size4 = incrementalSamples(500,20);
 		int[] s_size5 = incrementalSamples(812,20);
 		int[] s_size6 = incrementalSamples(6160,40);
+		int[] s_size7 = incrementalSamples(498,20);
 		
 		Configuration config3 = new Configuration("real_db","gdp",3,1,s_size3);
-		Configuration config4 = new Configuration("real_db","solar",4,1,s_size4);
+		Configuration config4 = new Configuration("real_db","employee",4,1,s_size4);
 		Configuration config5 = new Configuration("real_db","evm",5,1,s_size5);
 		Configuration config6 = new Configuration("real_db","evm",6,1,s_size6);
+		Configuration config7 = new Configuration("real_db","vldb",7,1,s_size7);
 		
 		//run experiments
 		QueryEstimation qe = new QueryEstimation();
 		try {
-			qe.runExperiment(config1,0); //uniform data
-//			qe.runExperiment(config2,0); //synthetic gdp data
-//			qe.runExperiment(config3,0); //real gdp data
-//			qe.runExperiment(config4,0); //real solar data
-//			qe.runExperiment(config5,0); //real EVM data (photon beam)
-//			qe.runExperiment(config6,0); //real EVM data (Appendicitis)
+			/** ------------- micro-benchmark ------------ */
+			//streaker
+//			int[] s_size1 = {20,40,60,80,100,120,140,160,180,200,220,240,260,280};
+//			config1 = new Configuration("synt_db","unif",1,10,s_size1);
+//			config1.extraParam(20, 2, 0.5, true, false);
+//			qe.runExperiment(config1);
+//			config1 = new Configuration("synt_db","unif",1,50,s_size1);
+//			config1.extraParam(20, 2, 0.5, false, true);
+//			qe.runExperiment(config1);
+			
+			//num of sources
+//			int[] s_size1 = {20,30,40,50,60,70,80,90,100,110,120,130,140};
+//			config1 = new Configuration("synt_db","unif",8,50,s_size1);
+//			config1.extraParam(1,2,0.5,false,false);
+//			qe.runExperiment(config1); //uniform data
+//			config1.extraParam(10,2,0.5,false,false);
+//			qe.runExperiment(config1); //uniform data
+//			config1.extraParam(20,2,0.5,false,false);
+//			qe.runExperiment(config1); //uniform data
+//			config1.extraParam(30,2,0.5,false,false);
+//			qe.runExperiment(config1); //uniform data
+//			config1.extraParam(3,2,0.5,false,false);
+//			qe.runExperiment(config1); //uniform data
+			
+			//varying degrees of data skew
+//			int[] s_size1 = {20,80,140,200,260,320,380,440,500};
+//			config1 = new Configuration("synt_db","unif",9,50,s_size1);
+//			config1.extraParam(20,2,0,false,false); //1
+//			qe.runExperiment(config1);
+//			config1.extraParam(20,2,0.5,false,false); //0.6
+//			qe.runExperiment(config1);
+//			config1.extraParam(20,2,2,false,false); //0.13
+//			qe.runExperiment(config1);
+//			config1.extraParam(20,2,4,false,false); //0.018
+//			qe.runExperiment(config1);
+			
+			/** -------------- real-benchmark ------------ */
+//			qe.runExperiment(config2); //synthetic gdp data
+//			qe.runExperiment(config3); //real gdp data
+			qe.runExperiment(config4); //real employee data
+//			qe.runExperiment(config5); //real EVM data (photon beam)
+//			qe.runExperiment(config6); //real EVM data (Appendicitis)
+//			qe.runExperiment(config7); //real SIGMOD/VLDB
 		} 
 		catch (Exception e) {
 			e.printStackTrace();
