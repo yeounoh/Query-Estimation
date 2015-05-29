@@ -175,7 +175,7 @@ public class Bucket {
 		double min = 0.0;
 		double min_orig = est.getMin();
 		if(est.chao92() > c){
-			min = Math.max(est.getSampleMean() - 2*est.getSampleStd(), 0);
+			min = est.getSampleMean() - 2*est.getSampleStd();
 			min = min < min_orig? min:min_orig;
 		}
 		else{

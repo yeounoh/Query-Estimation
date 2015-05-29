@@ -139,8 +139,8 @@ public class Estimator {
 		double cov = 1 - (double) f[0]/n; //f[0] = f_1
 		
 		double cv = 0.0;
-		if(cov == 0)
-			return c; //cv = Math.sqrt(n);
+		if(cov == 0) 
+			return c; //when there is no overlaps, we can't estimate
 		else if((n-1) == 0)
 			cv = Math.sqrt(n);
 		else{
@@ -172,7 +172,7 @@ public class Estimator {
 		for(int i : n_w)
 			n_size += i;
 		
-		//rank items
+		//rank items (by frequency)
 		//HashMap<Integer, double[]> dist_ranked = ranking(dist);
 		
 		double err_sum = 0;
