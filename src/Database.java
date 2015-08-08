@@ -56,7 +56,7 @@ public class Database {
 				.prepareStatement("insert into " + table + " values (?, ?, ?, ?, ?, ?)");
 		preparedStatement.setString(1, r.sourceID());
 		preparedStatement.setString(2, r.recordID());
-		preparedStatement.setLong(3, r.timestamp());
+		preparedStatement.setLong(3, r.timestamp()); 
 		preparedStatement.setString(4, r.name());
 		preparedStatement.setDouble(5, r.value());
 		preparedStatement.setInt(6, r.rank());
@@ -142,7 +142,7 @@ public class Database {
 				int rank = resultSet.getInt("rank"); 
 				String[] ids = {source_id, record_id};
 				
-				double pdf = Math.exp(-1*(rank-1)*lambda/n_class); // always accept if lambda = 0
+				double pdf = Math.exp(-1*(rank)*lambda/n_class); // always accept if lambda = 0
 				if(rand.nextDouble() <= pdf && !map.containsKey(rank)){
 					result[idx++] = new DataItem(ids, timestamp, name, value, rank);
 					if(sampling_type == 2){ //System.out.print(rank + " ");

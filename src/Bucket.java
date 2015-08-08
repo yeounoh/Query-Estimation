@@ -5,7 +5,7 @@ import java.util.Iterator;
 import java.util.List;
 
 public class Bucket {
-
+	
 	private double lower_b;
 	private double upper_b;
 	private HashMap<Integer, Object> samples;
@@ -151,9 +151,33 @@ public class Bucket {
 		return est.chao92();
 	}
 	
+	//Good-Turing estimator bound: M0 <= G0 + bound = G0'
+	//bound = (2*Math.sqrt(2)+Math.sqrt(3))*Math.sqrt(Math.log(3/delta)/n)
+	//c/(1-M0) <= c/(1-G0') -> 1-G0' <= 1-M0 -> M0 <= G0'
+	public double countEstUpperBound(){
+		double delta = 0.01; //at least with probability 1-delta
+		//double bound = (2*Math.sqrt(2)+Math.sqrt(3))*Math.sqrt(Math.log(3/delta)/n);
+		double bound = Math.sqrt(Math.log(1/delta)/n);
+		return c/(1-Math.min(getSampleCov()+bound,1));
+	}
+	
+	public double sumEstUpperBound(){
+		Estimator est = new Estimator(samples.values().toArray());
+		double delta = 0.01; //at least with probability 1-delta
+		//double bound = (2*Math.sqrt(2)+Math.sqrt(3))*Math.sqrt(Math.log(3/delta)/n);
+		double bound = Math.sqrt(Math.log(1/delta)/n);
+		int C_hat = (int) Math.ceil(c/(1-Math.min(est.sampleCov()+bound,1)));
+		return est.sumEst(C_hat);
+	}
+	
 	public double max(){
 		Estimator est = new Estimator(samples.values().toArray());
 		return est.getMax();
+	}
+	
+	public double min(){
+		Estimator est = new Estimator(samples.values().toArray());
+		return est.getMin();
 	}
 	
 	public double maxEst(){

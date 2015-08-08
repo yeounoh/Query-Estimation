@@ -39,7 +39,7 @@ public class DataGenerator {
 	 * @return
 	 * @throws Exception
 	 */
-	public Database generateDataset(String db_name, String table_name, boolean do_gen, int type) throws Exception{
+	public Database generateDataset(String db_name, String table_name, boolean do_gen, int type, boolean pub_val_corr) throws Exception{
 		Database db = new Database();
 		db.connect(db_name);
 	
@@ -50,12 +50,12 @@ public class DataGenerator {
 			DataGenerator gen = new DataGenerator();
 	
 			db.createTable(table_name); 
-			gen.loadDataset(db, table_name, type);
+			gen.loadDataset(db, table_name, type, pub_val_corr);
 			
-			if(type == 3){
+			if(type == 3){ //GDP value cleaning
 				//Data cleaning using Wikipedia GDP data
 				db.createTable("wiki"); 
-				gen.loadDataset(db, "wiki", 2); //syntGDP
+				gen.loadDataset(db, "wiki", 2, pub_val_corr); //syntGDP
 				
 				// assume all answers contain the precise gdp values (no variations)
 				db.queryExec("create table " + table_name + "_t as (select a.source_id, a.record_id, a.timestamp, "
@@ -69,46 +69,58 @@ public class DataGenerator {
 		return db;
 	}
 	
-	/**
-	 * type 1: uniformly distributed data items, nubmered 1 through max (e.g., 100)
-	 * type 2: State,Rank,GDP(2009),Rank,GDP(2008),Rank,GDP(2007),Rank,GDP(2006),Rank,GDP(2005)
-	 * type 3: AssignID | WorkerID | HITId | AcceptT | SubmitT | ApprovalT | State | GDP (cleaned with wiki GDP 2009 values)
-	 * type 4: AssignID | WorkerID | HITId | AcceptT | SubmitT | ApprovalT | Company | Revenue 
-	 * type 5: AssignID | WorkerID | HITId | AcceptT | SubmitT | ApprovalT | Abs. ID | #participants
-	 * @param db
-	 * @param table
-	 * @param type
-	 * @return
-	 * @throws SQLException
-	 * @throws IOException
-	 */
-	public int loadDataset(Database db, String table, int type) throws SQLException, IOException, ParseException {
-		String syntGDP = "/Users/yeounoh/git/Query-Estimation/data/gdp_us.csv";
-		String realGDP = "/Users/yeounoh/git/Query-Estimation/data/GDP2012_Run1_marked.csv";
-		String inputEmpl = "/Users/yeounoh/git/Query-Estimation/data/siliconvalley1_marked.csv";
-		String inputEVM = "/Users/yeounoh/git/Query-Estimation/data/RawResults_EVM.csv";
-		String inputEVM_App = "/Users/yeounoh/git/Query-Estimation/data/Appendicitis_EVM.csv";
-		String inputVLDB = "/Users/yeounoh/git/Query-Estimation/data/vldbsigmod_marked.csv";
+	public int loadDataset(Database db, String table, int type, boolean pub_val_corr) throws SQLException, IOException, ParseException {
+		String base_dir = "/Users/yeounoh/git/Query-Estimation/data/";
+		
+		String wikiGDP = base_dir + "gdp_us.csv";
+		
+		String realGDP = table == "gdp"? base_dir + "GDP2012_Run1_marked.csv": //table: gdp (single data set exp)
+			table == "gdp1"? base_dir + "gdp1_marked.csv": //table: gdp1
+			table == "gdp2"? base_dir + "gdp2_marked.csv": // table: gdp2
+			table == "gdp3"? base_dir + "gdp3_marked.csv":null; // table: gdp3
+		
+		String inputEmpl = table == "employee"? base_dir + "siliconvalley1_marked.csv":
+			base_dir + "siliconvalley2_marked.csv";
+		//inputEmpl = table == "employee12"? base_dir + "siliconvalley12_marked.csv":inputEmpl;
+		//String inputEmpl2 = base_dir + "UStech_employees1_2_marked.csv";
+		
+		String inputRevenue = table == "revenue"? base_dir + "siliconvalley_revenue1_marked.csv":
+			base_dir + "siliconvalley_revenue2_marked.csv";
+		inputRevenue = table == "revenue12"? base_dir + "siliconvalley_revenue12_marked.csv":inputRevenue;
+		
+		String inputEVM = base_dir + "RawResults_EVM.csv";
+		
+		String inputEVM_App = base_dir + "Appendicitis_EVM.csv";
+		
+		String inputVLDB = base_dir + "vldbsigmod_marked.csv";
+		
 		FileInputStream fis = null; 
 		BufferedReader br = null; 
 		SimpleDateFormat t = null;
 		
 		String line;
 		int cnt = 0;
-		if(type == 1 || type == 8 || type == 9){
+		if(type == 1 || type == 8 || type == 9 || type == 11){
 			// 1~max integer values
-			int max = 100;
-			for(int i=0;i<max;i++){
-				boolean pub_val_corr = true; //publicity-value correlated?
-				int rank = pub_val_corr ? max - i : (int) (100*Math.random() + 1); 
-				DataItem s = new DataItem(new String[]{"",""},0,Integer.toString(i+1),(i+1),(max-i));
+			HashMap<Integer,String> rank_map = new HashMap<Integer,String>();
+			int n_item = 100;
+			int gap = 1000/n_item;
+			for(int i=0;i<n_item;i++){
+				int rank = n_item - i;
+				if(!pub_val_corr){
+					rank = (int) (n_item*Math.random() + 1); 
+					while(rank_map.containsKey(rank)){
+						rank = (int) (n_item*Math.random() + 1);
+					}
+					rank_map.put(rank,"");
+				}
+				DataItem s = new DataItem(new String[]{"",""},0,Integer.toString((i+1)*gap),(i+1)*gap,rank);
 				db.insert(table, s);
 				cnt++;
 			}
 		}
-		else if(type == 2){
-			//wikipedia GDP data
-			fis= new FileInputStream(syntGDP);
+		if(type == 2){ //still need to clean real GDP data (type: 3)
+			fis= new FileInputStream(wikiGDP);
 			br= new BufferedReader(new InputStreamReader(fis));
 			
 			for(int i=0;i<4;i++){
@@ -117,42 +129,59 @@ public class DataGenerator {
 			
 			while((line = br.readLine())!=null){
 				String[] tokens = line.split(",");
-				DataItem s = new DataItem(new String[]{"",""},0,tokens[0].substring(1),Double.parseDouble(tokens[2]),Integer.parseInt(tokens[1]));
+				String[] ids = {"0","0","0"};
+				long timestamp = 0;
+				String name = tokens[0].substring(2); // "?California -> California
+				double value = Integer.parseInt(tokens[2]);
+				DataItem s = new DataItem(ids, timestamp, name, value, Integer.parseInt(tokens[1]));
+				
 				db.insert(table, s);
-				cnt++;
 			}
 			br.close();
+			return cnt;
 		}
-		else if(type == 3 || type == 4){
-			//real Amazon Mechanical Turk data
-			fis = type == 3 ? new FileInputStream(realGDP) : new FileInputStream(inputEmpl); 
+		else if(type == 3 || type == 4 || type == 10){
+			//real AMT (GDP, employee, revenue)
+			switch(type){
+				case 3: //GDP
+					fis = new FileInputStream(realGDP);
+					t = table == "gdp"? new SimpleDateFormat("yyyy-MM-dd'T'hh:mm:ss'Z'", Locale.ENGLISH):
+						new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", Locale.ENGLISH);
+					break;
+				case 4: //employment
+					fis = new FileInputStream(inputEmpl); 
+					t = new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", Locale.ENGLISH);
+					break;
+				case 10: //revenue
+					fis = new FileInputStream(inputRevenue); 
+					t = new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", Locale.ENGLISH);
+					break;
+				default: return -1;
+			}
 			br = new BufferedReader(new InputStreamReader(fis));
-			t = type == 3 ? new SimpleDateFormat("yyyy-MM-dd'T'hh:mm:ss'Z'", Locale.ENGLISH) :
-				new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", Locale.ENGLISH);
-			//t = new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", Locale.ENGLISH);
-			br.readLine(); //skip attribute names
+			System.out.println(br.readLine()); //skip attribute names
 
 			HashMap<DataItem,Integer> data = new HashMap<DataItem,Integer>();
 			while((line = br.readLine())!=null){ 
 				String[] tokens = line.split(",");
 				String[] ids = {tokens[1],tokens[0]};
 				long timestamp = t.parse(tokens[3]).getTime();
-				double value = Double.parseDouble(tokens[7]); 
+				double value = Double.parseDouble(tokens[7]);  
 				DataItem s = new DataItem(ids, timestamp, tokens[6], value, 0);
 				data.put(s,null);
-				//db.insert(table, s);
-				//cnt++;
 			}
 			br.close();
 			
 			Object[] samples = data.keySet().toArray();
 			new QuickSort().quickSort(samples,0,samples.length-1);
-			int r = samples.length; double v = ((DataItem) samples[0]).value(); 
+			int r = samples.length; 
+			
+			String n = ((DataItem) samples[0]).name(); 
 			for(Object s : samples){
-				if(((DataItem) s).value() > v){
-					v = ((DataItem) s).value();
+				if(!((DataItem) s).name().equals(n)){
+					n = ((DataItem) s).name();
 					r--;
-				}
+				} 
 				((DataItem) s).setRank(r);
 				db.insert(table, (DataItem) s);
 			}
@@ -171,17 +200,16 @@ public class DataGenerator {
 				double value = Double.parseDouble(tokens[7]); 
 				DataItem s = new DataItem(ids, timestamp, tokens[6], value, 0); 
 				data.put(s,null);
-				//db.insert(table, s);
-				//cnt++;
 			}
 			br.close();
 			
 			Object[] samples = data.keySet().toArray();
 			new QuickSort().quickSort(samples,0,samples.length-1);
-			int r = samples.length; double v = ((DataItem) samples[0]).value(); 
+			int r = samples.length; 
+			String n = ((DataItem) samples[0]).name(); 
 			for(Object s : samples){
-				if(((DataItem) s).value() > v){
-					v = ((DataItem) s).value();
+				if(!((DataItem) s).name().equals(n)){
+					n = ((DataItem) s).name();
 					r--;
 				}
 				((DataItem) s).setRank(r);
