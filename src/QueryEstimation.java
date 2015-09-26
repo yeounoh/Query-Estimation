@@ -135,62 +135,62 @@ public class QueryEstimation {
 	 * @return
 	 * @throws IOException 
 	 */
-//	public Result bucketMCApproach(Object[] sample, int[] n_w, double th,boolean ideal,boolean ub_test) throws IOException{
-//		Bucket[] buckets= null; //number of buckets may vary
-//		Estimator est = new Estimator(sample);
-//		
-//		int n = sample.length;
-//		
-//		buckets = est.autoBuckets(th, sample, ub_test);
-//		
-//		double[] sum_by_bucket = new double[buckets.length];
-//		double[] sum_by_bucket_f1 = new double[buckets.length];
-//		double[] cnt_by_bucket = new double[buckets.length]; //number of samples
-//		double[] chao_by_bucket = new double[buckets.length]; //uniq items number estimation
-//		double[] csum_by_bucket = new double[buckets.length];
-//		
-//		double sum_t = 0, sumf1_t = 0, cnt_t = 0, uniq_t = 0, chao_t = 0, avg_sc = 0, avg_cv = 0, csum_t = 0;
-//		double avg_t = 0, avgf1_t = 0, cavg_t;
-//		for(int bi=0;bi<buckets.length;bi++){
-//			Object[] samples_b = buckets[bi].getSamples().toArray();
-//			est = new Estimator(samples_b);
-//			
-//			int n_b = samples_b.length;
-//			
-//			cnt_by_bucket[bi] = samples_b.length; 
-//			
-//			int sample_left = n_b;
-//			int[] n_w_b = new int[n_w.length];
-//			for(int i=0;i<n_w.length;i++){
-//				n_w_b[i] = (int) Math.min(Math.ceil((double) n_w[i] * ((double) n_b/n)),sample_left);
-//				sample_left -= n_w_b[i];
-//			}
-//			if(sample_left > 0)
-//				n_w_b[0] += sample_left;
-//			
-//			double[] mc = MonteCarloPolyFit(samples_b, n_w_b,ideal).summary(); //MonteCarloApproach(samples_b, n_w_b, est_type,ideal,false).summary();
-//			sum_by_bucket[bi] =  mc[1];
-//			sum_by_bucket_f1[bi] = mc[3];
-//			chao_by_bucket[bi] = mc[0];
-//			csum_by_bucket[bi] = est.csum();
-//			
-//			cnt_t += cnt_by_bucket[bi];
-//			uniq_t += est.getUniqueCount();
-//			chao_t += chao_by_bucket[bi];
-//			sum_t += sum_by_bucket[bi];
-//			sumf1_t += sum_by_bucket_f1[bi];
-//			csum_t += csum_by_bucket[bi];
-//		}
-//		avg_t = sum_t/chao_t;
-//		avgf1_t = sumf1_t/chao_t;
-//		cavg_t = csum_t/uniq_t;
-//		double[] cnt = {cnt_t, uniq_t, chao_t, buckets.length};
-//		double[] sum = {sum_t, csum_t};
-//		double[] measure = {avg_sc, avg_cv};
-//		double[] other = {avg_t,cavg_t,sumf1_t,avgf1_t};
-//		
-//		return new Result(cnt, sum, measure, other);
-//	}
+	public Result bucketMCApproach(Object[] sample, int[] n_w, double th,boolean ideal,boolean ub_test) throws IOException{
+		Bucket[] buckets= null; //number of buckets may vary
+		Estimator est = new Estimator(sample);
+		
+		int n = sample.length;
+		
+		buckets = est.autoBuckets(th, sample, ub_test);
+		
+		double[] sum_by_bucket = new double[buckets.length];
+		double[] sum_by_bucket_f1 = new double[buckets.length];
+		double[] cnt_by_bucket = new double[buckets.length]; //number of samples
+		double[] chao_by_bucket = new double[buckets.length]; //uniq items number estimation
+		double[] csum_by_bucket = new double[buckets.length];
+		
+		double sum_t = 0, sumf1_t = 0, cnt_t = 0, uniq_t = 0, chao_t = 0, avg_sc = 0, avg_cv = 0, csum_t = 0;
+		double avg_t = 0, avgf1_t = 0, cavg_t;
+		for(int bi=0;bi<buckets.length;bi++){
+			Object[] samples_b = buckets[bi].getSamples().toArray();
+			est = new Estimator(samples_b);
+			
+			int n_b = samples_b.length;
+			
+			cnt_by_bucket[bi] = samples_b.length; 
+			
+			int sample_left = n_b;
+			int[] n_w_b = new int[n_w.length];
+			for(int i=0;i<n_w.length;i++){
+				n_w_b[i] = (int) Math.min(Math.ceil((double) n_w[i] * ((double) n_b/n)),sample_left);
+				sample_left -= n_w_b[i];
+			}
+			if(sample_left > 0)
+				n_w_b[0] += sample_left;
+			
+			double[] mc = MonteCarloPolyFit(samples_b, n_w_b,ideal).summary(); //MonteCarloApproach(samples_b, n_w_b, est_type,ideal,false).summary();
+			sum_by_bucket[bi] =  mc[1];
+			sum_by_bucket_f1[bi] = mc[3];
+			chao_by_bucket[bi] = mc[0];
+			csum_by_bucket[bi] = est.csum();
+			
+			cnt_t += cnt_by_bucket[bi];
+			uniq_t += est.getUniqueCount();
+			chao_t += chao_by_bucket[bi];
+			sum_t += sum_by_bucket[bi];
+			sumf1_t += sum_by_bucket_f1[bi];
+			csum_t += csum_by_bucket[bi];
+		}
+		avg_t = sum_t/chao_t;
+		avgf1_t = sumf1_t/chao_t;
+		cavg_t = csum_t/uniq_t;
+		double[] cnt = {cnt_t, uniq_t, chao_t, buckets.length};
+		double[] sum = {sum_t, csum_t};
+		double[] measure = {avg_sc, avg_cv};
+		double[] other = {avg_t,cavg_t,sumf1_t,avgf1_t};
+		
+		return new Result(cnt, sum, measure, other);
+	}
 		
 	public Result MonteCarloPolyFit(Object[] sample, int[] n_w, boolean ideal) throws IOException {
 		
@@ -304,7 +304,7 @@ public class QueryEstimation {
 		double[][][] mc_app_rep = conf.heatmap? null : new double[conf.s_size.length][conf.n_rep][];
 		
 		//method4: Monte-Carlo Bucket Simulation
-		//double[][][] mcbkt_rep = (conf.mc_index || conf.heatmap)? null : new double[conf.s_size.length][conf.n_rep][];
+		double[][][] mcbkt_rep = (conf.mc_index || conf.heatmap)? null : new double[conf.s_size.length][conf.n_rep][];
 		
 		for(int ri=0;ri<conf.n_rep;ri++){
 			if(ri%100 == 0)
@@ -422,13 +422,13 @@ public class QueryEstimation {
 				endTime = System.currentTimeMillis();
 				System.out.print(" "+(endTime - startTime)+"\n");
 				//Monte-Carlo bucket simulation
-				//Result mcbkt = (conf.mc_index || conf.heatmap)? null : bucketMCApproach(sample, n_w, 0.05, false);
+				Result mcbkt = (conf.mc_index || conf.heatmap)? null : bucketMCApproach(sample, n_w, 0.05, false, false);
 				
 				//estimate population statistics
 				if(!conf.heatmap){
 					naive_rep[si][ri] = naive.summary();
 					mc_app_rep[si][ri] = mc_app.summary(); 
-					//mcbkt_rep[si][ri] = mcbkt.summary();
+					mcbkt_rep[si][ri] = mcbkt.summary();
 				}
 				bkt_auto_rep[si][ri] = bkt_auto.summary(); 
 				//naive_ub_rep[si][ri] = naive_ub.summary();
@@ -577,10 +577,10 @@ public class QueryEstimation {
 					avg_mcf1_app += mc_app_rep[si][ri][3]/conf.n_rep;
 					avg_avg_mcf1_app += mc_app_rep[si][ri][4]/conf.n_rep;
 					
-//					avg_mcbkt += mcbkt_rep[si][ri][4]/conf.n_rep;
-//					avg_avg_mcbkt += mcbkt_rep[si][ri][8]/conf.n_rep;
-//					avg_mcbktf1 += mcbkt_rep[si][ri][10]/conf.n_rep;
-//					avg_avg_mcbktf1 += mcbkt_rep[si][ri][11]/conf.n_rep;
+					avg_mcbkt += mcbkt_rep[si][ri][4]/conf.n_rep;
+					avg_avg_mcbkt += mcbkt_rep[si][ri][8]/conf.n_rep;
+					avg_mcbktf1 += mcbkt_rep[si][ri][10]/conf.n_rep;
+					avg_avg_mcbktf1 += mcbkt_rep[si][ri][11]/conf.n_rep;
 				}
 				avg_max_orig += bkt_auto_rep[si][ri][9]/conf.n_rep;
 				if(bkt_auto_rep[si][ri][10] != -1){
@@ -787,10 +787,10 @@ public class QueryEstimation {
 			
 			//regular synthetic data exp
 			//int[] s_size1c = {200,300,400,500,600,700,800,900,1000,1100,1200,1300,1400,1500}; //upper bound
-			int[] s_size1c = {100,200,300,400,500,600,700,800};
-			config1 = new Configuration("synt_db","unif",1,20,s_size1c);
-			config1.extraParam(20,2,1.0,false,false,false,false); //0.6
-			qe.runExperiment(config1);
+//			int[] s_size1c = {100,200,300,400,500,600,700,800};
+//			config1 = new Configuration("synt_db","unif",1,20,s_size1c);
+//			config1.extraParam(20,2,1.0,false,false,false,false); //0.6
+//			qe.runExperiment(config1);
 			
 			/** -------------- real-benchmark ------------ */
 			//real gdp data
@@ -800,10 +800,10 @@ public class QueryEstimation {
 //			qe.runExperiment(config3); 
 //			
 //			//real employee data
-//			int[] s_size4 = incrementalSamples(20,496,20); //989, 995
-//			Configuration config4 = new Configuration("real_db","employee",4,1,s_size4);
-//			//config4.extraParam(new String[]{"employee","employee1"});
-//			qe.runExperiment(config4); 
+			int[] s_size4 = incrementalSamples(20,496,20); //989, 995
+			Configuration config4 = new Configuration("real_db","employee",4,1,s_size4);
+			//config4.extraParam(new String[]{"employee","employee1"});
+			qe.runExperiment(config4); 
 //			
 //			//real EVM data (photon beam)
 //			int[] s_size5 = incrementalSamples(20,812,20);
