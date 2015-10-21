@@ -15,6 +15,11 @@ public class Bucket {
 	private int c;
 	private int idx;
 	
+	public Bucket(){
+		this.samples = new HashMap<Integer,Object>();
+		this.hist = new HashMap<String,HistBar>();
+	}
+	
 	public Bucket(double lb, double ub){
 		this.n = 0;
 		this.c = 0;
@@ -89,7 +94,6 @@ public class Bucket {
 				bar.setUpperB(v);
 				hist.put(k, bar);
 			}
-			
 			int[] f = new int[this.samples.size()];
 			Collection<HistBar> col = hist.values();
 			Iterator<HistBar> itr = col.iterator();

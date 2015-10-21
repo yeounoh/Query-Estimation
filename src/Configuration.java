@@ -3,6 +3,7 @@ public class Configuration {
 	String db_name;
 	String tb_name;
 	String[] tb_multi;
+	int[] nb;
 	int data_type;
 	int n_rep;
 	
@@ -16,7 +17,8 @@ public class Configuration {
 	boolean st_only = false;
 	boolean st_inject = false;
 	boolean heatmap = false;
-	boolean mc_index = false;
+	boolean bkt_exp = false;
+	boolean n_src_exp = false;
 	boolean pub_val_corr = true;
 	
 	public Configuration(String db_name, String tb_name, int data_type, int n_rep, int[] s_size){
@@ -27,14 +29,21 @@ public class Configuration {
 		this.s_size = s_size; //total sample size
 	}
 	
-	public void extraParam(int n_worker, int sampling_type, double lambda, boolean st_only, boolean st_inject, boolean heatmap, boolean mc_index){
+	public void extraParam(int n_worker, int sampling_type, double lambda, boolean st_only, boolean st_inject, boolean heatmap){
 		this.n_worker = n_worker; //(s_size/n_worker) samples per worker
 		this.sampling_type = sampling_type;
 		this.lambda = lambda;
 		this.st_only = st_only;
 		this.st_inject = st_inject;
 		this.heatmap = heatmap;
-		this.mc_index = mc_index;
+	}
+	
+	public void bucketExp(boolean bkt_exp){
+		this.bkt_exp = bkt_exp;
+	}
+	
+	public void numSourceExp(boolean n_src_exp){
+		this.n_src_exp = n_src_exp;
 	}
 	
 	public void extraParam(String[] tb_multi){
@@ -43,6 +52,10 @@ public class Configuration {
 			System.exit(1);
 		}
 		this.tb_multi = tb_multi;
+	}
+	
+	public void extraParam(int[] nb){
+		this.nb = nb;
 	}
 	
 	public void setPublicityValueCorr(boolean pb_corr){

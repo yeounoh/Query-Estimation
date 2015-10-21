@@ -38,7 +38,7 @@ public class QueryEstimation {
 		Bucket[] buckets= null; //number of buckets may vary
 		Estimator est = new Estimator(sample);
 		
-		if(bkt_type == 1){
+		if(bkt_type == 1){ //static bucket (equi-width)
 			buckets = new Bucket[n_bkt];
 			double width = (est.getMax() - est.getMin())/n_bkt; 
 			for(int bi=0;bi<n_bkt;bi++){
@@ -63,6 +63,22 @@ public class QueryEstimation {
 		else if(bkt_type == 2){
 			buckets = est.autoBuckets(th, sample, ub_test);
 		}
+		else if(bkt_type == 3){ //static bucket (equi-height)
+			buckets = new Bucket[n_bkt];
+			for(int bkt_idx=0;bkt_idx<n_bkt;bkt_idx++)
+				buckets[bkt_idx] = new Bucket();
+			double height = Math.ceil((double)sample.length/n_bkt); System.out.println(n_bkt +" , " + height);
+			new QuickSort().quickSort(sample,0,sample.length-1);
+			int bkt_idx = 0, cnt = 0;
+			for(Object s : sample){
+				if(cnt >= height){
+					cnt = 0;
+					bkt_idx++;
+				}
+				buckets[bkt_idx].insertSample(s);
+				cnt++;
+			}
+		}
 		
 		double[] sum_by_bucket = new double[buckets.length];
 		double[] sum_by_bucket_f1 = new double[buckets.length];
@@ -84,17 +100,19 @@ public class QueryEstimation {
 		
 		for(int bi=0;bi<buckets.length;bi++){
 			Object[] samples_b = buckets[bi].getSamples().toArray();
-			est = new Estimator(samples_b);
+			est = new Estimator(samples_b); 
 			
 			cnt_by_bucket[bi] = samples_b.length; 
 			sum_by_bucket[bi] = ub_test? est.sumEstUpperBound():est.sumEst(); 
-			sum_by_bucket_f1[bi] = est.sumf1(); //System.out.println("bkt"+(bi+1)+", diff:"+(est.sumEst()-est.sumf1())+", "+est.sumEst()+", "+est.sumf1());
+			sum_by_bucket_f1[bi] = est.sumf1(); 
 			sc_by_bucket[bi] = buckets[bi].getSampleCov();
 			cv_by_bucket[bi] = buckets[bi].getCoeffVar();
 			//chao_by_bucket[bi] = est.chao92();
 			csum_by_bucket[bi] = est.csum();
 			
 			cnt_t += cnt_by_bucket[bi];
+			if(cnt_by_bucket[bi] == 0)
+				continue;
 			uniq_t += est.getUniqueCount();
 			//chao_t += chao_by_bucket[bi];
 			sum_t += sum_by_bucket[bi];
@@ -102,9 +120,8 @@ public class QueryEstimation {
 			csum_t += csum_by_bucket[bi];
 			avg_sc += sc_by_bucket[bi] * (double) samples_b.length/sample.length; 
 			avg_cv += cv_by_bucket[bi] * (double) samples_b.length/sample.length;
-			
-			avg_t += sum_by_bucket[bi]/chao_by_bucket[bi] * (chao_by_bucket[bi]/chao_t);
-			avgf1_t += sum_by_bucket_f1[bi]/est.getF1Count() * (chao_by_bucket[bi]/chao_t);
+			avg_t += chao_by_bucket[bi] == 0? 0 : sum_by_bucket[bi]/chao_by_bucket[bi] * (chao_by_bucket[bi]/chao_t); 
+			avgf1_t += est.getF1Count() == 0? 0 : sum_by_bucket_f1[bi]/est.getF1Count() * (chao_by_bucket[bi]/chao_t);
 		}
 		//avg_t = sum_t/chao_t;
 		//avgf1_t = sumf1_t/chao_t;
@@ -294,17 +311,20 @@ public class QueryEstimation {
 		Database db = new DataGenerator().generateDataset(conf.db_name, conf.tb_name, do_gen, conf.data_type, conf.pub_val_corr);
 		
 		//method1: naive
-		double[][][] naive_rep = (conf.mc_index || conf.heatmap)? null : new double[conf.s_size.length][conf.n_rep][]; 
-		double[][][] naive_ub_rep = (conf.mc_index || conf.heatmap)? null : new double[conf.s_size.length][conf.n_rep][]; 
+		double[][][] naive_rep = (conf.bkt_exp || conf.heatmap)? null : new double[conf.s_size.length][conf.n_rep][]; 
+		double[][][] naive_ub_rep = (conf.bkt_exp || conf.heatmap)? null : new double[conf.s_size.length][conf.n_rep][]; 
 		
 		//method2: bucket
-		double[][][] bkt_auto_rep = conf.mc_index? null : new double[conf.s_size.length][conf.n_rep][];
+		double[][][] bkt_auto_rep = conf.bkt_exp? null : new double[conf.s_size.length][conf.n_rep][];
+		double[][][] dynamic_rep = conf.bkt_exp? new double[conf.s_size.length][conf.n_rep][] : null;
+		double[][][][] height_rep = conf.bkt_exp? new double[conf.s_size.length][conf.n_rep][conf.nb.length][] : null;
+		double[][][][] width_rep = conf.bkt_exp? new double[conf.s_size.length][conf.n_rep][conf.nb.length][] : null;
 		
 		//method3: Monte-Carlo Simulation
 		double[][][] mc_app_rep = conf.heatmap? null : new double[conf.s_size.length][conf.n_rep][];
 		
 		//method4: Monte-Carlo Bucket Simulation
-		double[][][] mcbkt_rep = (conf.mc_index || conf.heatmap)? null : new double[conf.s_size.length][conf.n_rep][];
+		double[][][] mcbkt_rep = (conf.bkt_exp || conf.heatmap)? null : new double[conf.s_size.length][conf.n_rep][];
 		
 		for(int ri=0;ri<conf.n_rep;ri++){
 			if(ri%100 == 0)
@@ -398,43 +418,85 @@ public class QueryEstimation {
 					System.out.println("Unknown data type");
 					return;
 				}
+				//System.out.println("___________________|naive|buckt|monte|");
 				long startTime = System.currentTimeMillis();
 				//naive approach
-				Result naive = (conf.mc_index || conf.heatmap)? null : bucketApproach(sample, 1, 0.0, 1, 0,false);
+				Result naive = (conf.bkt_exp || conf.heatmap)? null : bucketApproach(sample, 1, 0.0, 1, 0,false);
 				//Result naive_ub = (conf.mc_index || conf.heatmap)? null : bucketApproach(sample, 1, 0.0, 1, 0,true);
 				long endTime = System.currentTimeMillis();
-				System.out.print("n="+conf.s_size[si] + " "+(endTime - startTime));
+				//System.out.print("Elapsed time (n="+conf.s_size[si] + ") :  "+(endTime - startTime) +"  ");
 				startTime = System.currentTimeMillis();
 				//ER auto approach
-				Result bkt_auto = conf.mc_index? null : bucketApproach(sample, 0, 0.05, 2, 0,false);
+				Result bkt_auto = (conf.heatmap || conf.bkt_exp)? null : bucketApproach(sample, 0, 0.05, 2, 0,false);
 				endTime = System.currentTimeMillis();
-				System.out.print(" "+(endTime - startTime));
+				//System.out.print("   "+(endTime - startTime)+"  ");
 				startTime = System.currentTimeMillis();
 				//Monte-Carlo Simulation
+				Result mc_app = (conf.heatmap || conf.bkt_exp)? null : MonteCarloPolyFit(sample, n_w,false); 
+				/**
 				boolean test = conf.mc_index? true : false;
-				Result mc_app = conf.heatmap? null : MonteCarloPolyFit(sample, n_w,false); 
-				//MonteCarloApproach(sample, n_w, 0, false,test);
+				MonteCarloApproach(sample, n_w, 0, false,test);
 				if(conf.mc_index) {
 					System.out.println("mc_index test is outdated!"); 
 					//MonteCarloApproach(sample, n_w, 0, true,test);
 					continue;
 				}
+				*/
 				endTime = System.currentTimeMillis();
-				System.out.print(" "+(endTime - startTime)+"\n");
+				//System.out.print(" "+(endTime - startTime)+"\n");
 				//Monte-Carlo bucket simulation
-				Result mcbkt = (conf.mc_index || conf.heatmap)? null : bucketMCApproach(sample, n_w, 0.05, false, false);
+				Result mcbkt = (conf.bkt_exp || conf.heatmap || conf.n_src_exp)? null : bucketMCApproach(sample, n_w, 0.05, false, false);
 				
 				//estimate population statistics
-				if(!conf.heatmap){
+				if(!(conf.heatmap || conf.bkt_exp)){
 					naive_rep[si][ri] = naive.summary();
 					mc_app_rep[si][ri] = mc_app.summary(); 
-					mcbkt_rep[si][ri] = mcbkt.summary();
+					mcbkt_rep[si][ri] = conf.n_src_exp? null : mcbkt.summary();
 				}
-				bkt_auto_rep[si][ri] = bkt_auto.summary(); 
+				if(! conf.bkt_exp) bkt_auto_rep[si][ri] = bkt_auto.summary(); 
 				//naive_ub_rep[si][ri] = naive_ub.summary();
+				
+				//---------static bucket experiment-------------//
+				if(conf.bkt_exp){
+					Result dynamic = bucketApproach(sample, 0, 0.05, 2, 0,false);
+					dynamic_rep[si][ri] = dynamic.summary();
+					for(int nbi=0;nbi<conf.nb.length;nbi++){
+						int nb = conf.nb[nbi];
+						Result equi_height = bucketApproach(sample, nb, 0.05, 3, 0, false); 
+						Result equi_width = bucketApproach(sample, nb, 0.05, 1, 0, false);
+						
+						height_rep[si][ri][nbi] = equi_height.summary();
+						width_rep[si][ri][nbi] = equi_width.summary();
+					}	
+				}
+				//---------static bucket experiment-------------//
 			}
 		}
-		if(conf.mc_index)	return;
+		//if(conf.mc_index)	return;
+		if(conf.bkt_exp) {
+			FileOutputStream fos_bkt_exp= new FileOutputStream("./result/bkt_exp_"+conf.tb_name+".txt");
+			BufferedWriter bw_bkt_exp= new BufferedWriter(new OutputStreamWriter(fos_bkt_exp));
+			
+			for(int si=0;si<conf.s_size.length;si++){
+				String line = "" + conf.s_size[si];
+				String width = "", height = "";
+				double dynamic_sum = 0, equi_height_sum = 0, equi_width_sum =0;
+				for(int nbi=0;nbi<conf.nb.length;nbi++){
+					dynamic_sum = 0; equi_height_sum = 0; equi_width_sum =0;
+					for(int ri=0;ri<conf.n_rep;ri++){
+						dynamic_sum += dynamic_rep[si][ri][4]/conf.n_rep;
+						equi_height_sum += height_rep[si][ri][nbi][4]/conf.n_rep;
+						equi_width_sum += width_rep[si][ri][nbi][4]/conf.n_rep;
+					}
+					width += " " + equi_width_sum;
+					height += " " + equi_height_sum;
+				}
+				bw_bkt_exp.write(conf.s_size[si] + " " + dynamic_sum + " " + width + " " + height);
+				bw_bkt_exp.newLine();
+				bw_bkt_exp.flush();
+			}
+			return;
+		}
 		
 		//---------heat map for max bucket-------------//
 		if(conf.heatmap){
@@ -548,7 +610,24 @@ public class QueryEstimation {
 			
 			double avg_avg=0, avg_avg_f1=0, avg_avg_bkt=0, avg_avg_bktf1=0, avg_avg_bkt_auto=0,avg_avg_bktf1_auto=0,avg_avg_mc_app=0, avg_avg_mcf1_app=0, avg_avg_mcbkt=0, avg_avg_mcbktf1=0;
 			for(int ri=0;ri<conf.n_rep;ri++){
-				if(!conf.heatmap){
+				if(conf.n_src_exp){
+					avg_csum += naive_rep[si][ri][5]/conf.n_rep;
+					avg_cavg += naive_rep[si][ri][11]/conf.n_rep;
+					
+					avg_bkt_auto += bkt_auto_rep[si][ri][4]/conf.n_rep;
+					avg_avg_bkt_auto += bkt_auto_rep[si][ri][8]/conf.n_rep;
+					avg_bktf1_auto += bkt_auto_rep[si][ri][15]/conf.n_rep;
+					avg_avg_bktf1_auto += bkt_auto_rep[si][ri][16]/conf.n_rep;
+					
+					avg_nbktauto += bkt_auto_rep[si][ri][3]/conf.n_rep;
+					avg_nbktf1auto += bkt_auto_rep[si][ri][3]/conf.n_rep;
+					
+					avg_mc_app += mc_app_rep[si][ri][1]/conf.n_rep; 
+					avg_avg_mc_app += mc_app_rep[si][ri][2]/conf.n_rep;
+					avg_mcf1_app += mc_app_rep[si][ri][3]/conf.n_rep;
+					avg_avg_mcf1_app += mc_app_rep[si][ri][4]/conf.n_rep;
+				}
+				if(!conf.heatmap && !conf.n_src_exp){
 					avg_csum += naive_rep[si][ri][5]/conf.n_rep;
 					avg_cavg += naive_rep[si][ri][11]/conf.n_rep;
 					
@@ -641,7 +720,7 @@ public class QueryEstimation {
 //			double min_prec_obs = 1- min_tn_obs/(min_fp_obs+min_tn_obs);//(min_tp_obs+min_fp_obs)/(min_tn_obs+min_fp_obs);//min_tp_obs/(min_tp_obs+min_fp_obs);
 //			double min_rec_obs = min_tp_obs/(min_tp_obs+min_fn_obs);
 			
-			if(!conf.heatmap){
+			if(!conf.heatmap && !conf.n_src_exp){
 				for(int ri=0;ri<conf.n_rep;ri++){
 					std_csum += (naive_rep[si][ri][5]-avg_csum)*(naive_rep[si][ri][5]-avg_csum);
 					std += (naive_rep[si][ri][4]-avg)*(naive_rep[si][ri][4]-avg);
@@ -717,22 +796,56 @@ public class QueryEstimation {
 //			qe.runExperiment(config1);
 			
 			//num of sources
-//			int[] s_size1b = {80,90,100,110,120,130,140,150,160};
+//			int[] s_size1b = {10,20,30,40,50,80,140,200,260,320,380,440,500};
 //			config1 = new Configuration("synt_db","unif",8,20,s_size1b);
-//			config1.extraParam(1,2,1.0,false,false,false,false);
+//			config1.setPublicityValueCorr(true);
+//			config1.extraParam(1,2,1.0,false,false,false);
 //			qe.runExperiment(config1); //uniform data
-//			config1.extraParam(20,2,1.0,false,false,false,false);
+//			config1.extraParam(10,2,1.0,false,false,false);
 //			qe.runExperiment(config1); //uniform data
-//			config1.extraParam(40,2,1.0,false,false,false,false);
+//			config1.extraParam(100,2,1.0,false,false,false);
 //			qe.runExperiment(config1); //uniform data
-//			config1.extraParam(3,2,1.0,false,false,false,false);
+//			config1.extraParam(3,2,1.0,false,false,false);
+//			config1.extraParam(2,2,1.0,false,false,false);
 //			qe.runExperiment(config1); //uniform data
-//		
+//			config1.extraParam(4,2,1.0,false,false,false);
+//			qe.runExperiment(config1); //uniform data
+//			config1.extraParam(5,2,1.0,false,false,false);
+//			qe.runExperiment(config1); //uniform data
+
+			//num of sources : numSourceExp(boolean n_src_exp)
+			int[] s_size1b = incrementalSamples(30,500,20);
+			config1 = new Configuration("synt_db","unif",8,20,s_size1b);
+			config1.numSourceExp(true);
+			config1.setPublicityValueCorr(true);
+			config1.extraParam(1,2,4.0,false,false,false);
+			qe.runExperiment(config1); 
+			config1.extraParam(2,2,4.0,false,false,false);
+			qe.runExperiment(config1); 
+			config1.extraParam(3,2,4.0,false,false,false);
+			qe.runExperiment(config1); 
+			config1.extraParam(4,2,4.0,false,false,false);
+			qe.runExperiment(config1); 
+			config1.extraParam(5,2,4.0,false,false,false);
+			qe.runExperiment(config1);
+			config1.extraParam(6,2,4.0,false,false,false);
+			qe.runExperiment(config1); 
+//			config1.extraParam(7,2,4.0,false,false,false);
+//			qe.runExperiment(config1); 
+//			config1.extraParam(8,2,4.0,false,false,false);
+//			qe.runExperiment(config1); 
+//			config1.extraParam(9,2,4.0,false,false,false);
+//			qe.runExperiment(config1); 
+//			config1.extraParam(10,2,4.0,false,false,false);
+//			qe.runExperiment(config1); 
+			
 //			//varying degrees of data skew
 //			int[] s_size1c = {80,140,200,260,320,380,440,500};
 //			config1 = new Configuration("synt_db","unif",9,20,s_size1c);
-////			config1.extraParam(20,2,0.0,false,false,false,false); //1
-////			qe.runExperiment(config1);
+//			config1.extraParam(20,2,0.0,false,false,false); //1
+//			//config1.bucketExp(true);
+//			//config1.extraParam(new int[]{1,2,3,4,5,6,7,8,9,10});
+//			qe.runExperiment(config1);
 //			config1.extraParam(20,2,1.0,false,false,false,false); //0.6
 //			qe.runExperiment(config1);
 //			config1.extraParam(20,2,1.0,false,false,false,false); //0.13
@@ -800,10 +913,17 @@ public class QueryEstimation {
 //			qe.runExperiment(config3); 
 //			
 //			//real employee data
-			int[] s_size4 = incrementalSamples(20,496,20); //989, 995
-			Configuration config4 = new Configuration("real_db","employee",4,1,s_size4);
-			//config4.extraParam(new String[]{"employee","employee1"});
-			qe.runExperiment(config4); 
+//			int[] s_size4 = incrementalSamples(20,497,20); //989, 995
+//			Configuration config4 = new Configuration("real_db","employee",4,1,s_size4);
+//			//config4.extraParam(new String[]{"employee","employee1"});
+//			qe.runExperiment(config4); 
+			
+			//real employee data (static bucket testing)
+//			int[] s_size4_bkt = incrementalSamples(20,497,20); //989, 995
+//			Configuration config4_bkt = new Configuration("real_db","employee",4,1,s_size4_bkt);
+//			config4_bkt.bucketExp(true);
+//			config4_bkt.extraParam(new int[]{1,2,3,4,5,6,7,8,9,10});
+//			qe.runExperiment(config4_bkt); 
 //			
 //			//real EVM data (photon beam)
 //			int[] s_size5 = incrementalSamples(20,812,20);
