@@ -3,12 +3,17 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Random;
 import java.util.Set;
+
+import org.apache.commons.math3.distribution.PoissonDistribution;
 
 public class Estimator {
 	
@@ -24,6 +29,15 @@ public class Estimator {
 	private double min, max;
 	
 	private int specific_item_cnt;
+	
+	// For incidence-based approaches
+	private int[] Q;
+	private double q1_sum, q12_sum;
+	
+	// For Abundance Coverage Estimator (ACE)
+	private int c_rare; //the number of rare species in a sample (each with 10 or fewer individuals)
+	private int c_abun; //the number of abundant species in a sample (each with more than 10 individuals)
+	private int n_rare; //the total number of individuals in the rare species
 		
 	public Estimator(Object[] sample){
 		specific_item_cnt = 0;
@@ -52,11 +66,12 @@ public class Estimator {
 				if(dist.containsKey(k)){
 					double[] v = dist.get(k);
 					v[0] += 1; 
+					v[2] += 1; // because each worker/source is sampling without replacement
 					dist.replace(k, v);
 				}
 				else{
 					c_sum += val;
-					dist.put(k, new double[]{1, val});
+					dist.put(k, new double[]{1, val, 1}); // (abundance, value, incidence)
 				}
 				
 				if(((DataItem) s).rank() == 100){ // smallest value among 100 data items
@@ -66,6 +81,10 @@ public class Estimator {
 		}
 		
 		int[] f = new int[samples.size()];
+		int n = 0;
+		int n_rare = 0;
+		int c_rare = 0;
+		int c_abun = 0;
 		Iterator<Integer> itr = dist.keySet().iterator();
 		while(itr.hasNext()){
 			Integer k = itr.next();
@@ -82,9 +101,21 @@ public class Estimator {
 			}
 			
 			f[(int)cnt-1] = f[(int)cnt-1]+1;
+			n += cnt;
+			
+			if(cnt <= 10) {
+				c_rare++;
+				n_rare += cnt;
+			}
+			else c_abun++;
 		}
 		this.f = f;
 		this.c = dist.size(); 
+		this.n = n;
+		
+		this.c_rare = c_rare;
+		this.c_abun = c_abun;
+		this.n_rare = n_rare;
 	}
 	
 	public int getF1Count(){
@@ -136,6 +167,139 @@ public class Estimator {
 		return min;
 	}
 	
+	// Abundance Coverage Estimator
+	public double ACE(){
+		if(n == 0)
+			return 0;
+		
+		double cov_ACE = 1 - (double) f[0]/n_rare;
+		
+		double cv = 0.0;
+		if(cov_ACE == 0) 
+			return chao92(); //f1=n_rare, return Chao1
+		else if((n-1) == 0)
+			cv = Math.sqrt(n);
+		else{
+			int sum = 0;
+			for(int i=0;i<10;i++)
+				sum += i*(i+1)*f[i];
+			
+			cv = Math.max((double) c_rare/cov_ACE*((double) sum/(double) n_rare/(double) (n_rare-1))-1, 0);
+		}
+				
+		return Math.max((double) c_abun + c_rare/cov_ACE + f[0]*cv/cov_ACE, c);
+	}
+	
+	// Valiant's estimator
+	public double unseen(){
+		if(n == 0) return 0;
+		
+		double grid_factor = 1.05; // x_i (the grid of prob) will be geometric with this ratio
+		double alpha = 0.5; // avoid overfitting, smaller value increase the risk
+		int max_itr = 1000;
+		
+		// minimum allowable probability
+		double xLP_min = 1.0/(n*Math.max(10,n));
+		int i_min = 0;
+		for(int i=0;i<f.length; i++) if(f[i]>0) i_min = i;
+		if(i_min > 0) xLP_min = (double) (i_min+1.0)/n;
+		
+		// split the f-statistics into the dense portion and the sparse portion
+		ArrayList<Double> x = new ArrayList<Double>();
+		ArrayList<Double> histx = new ArrayList<Double>();
+		ArrayList<Double> fLP = new ArrayList<Double>();
+		for (int i=0;i<f.length;i++){
+			if (f[i] > 0){
+				int i_lower = (int) Math.max(0, i-Math.ceil(Math.sqrt(i)));
+				int i_upper = (int) Math.min(f.length-1, i+Math.ceil(Math.sqrt(i)));
+				int sum = 0;
+				for(int j=i_lower;j<=i_upper;j++) sum += f[j];
+				if(sum < Math.sqrt(i)){
+					// sparse region used the empirical histogram
+					x.add((double) (i+1.0)/n);
+					histx.add((double) f[i]);
+					fLP.add(0.0);
+				}
+				else{
+					// wil use LP for dense region
+					fLP.add((double) f[i]);
+				}
+			}
+		}
+		
+		// no LP portion
+		double fLPsum = 0;
+		for(double fp : fLP) fLPsum += fp;
+		if (fLPsum == 0.0){
+			x.remove(0);
+			histx.remove(0);
+			double histxsum = 0.0;
+			Iterator<Double> histxitr = histx.iterator();
+			while(histxitr.hasNext()){
+				histxsum += histxitr.next().doubleValue();
+			}
+			return histxsum;
+		}
+		
+		// first LP problem
+		double xhistxsum = 0.0;
+		for(int i=0;i<x.size();i++) xhistxsum += x.get(i) * histx.get(i);
+		double LP_mass = 1 - xhistxsum;
+		double f_max = 0.0;
+		int idxMax = 0;
+		for(int i=0;i<fLP.size();i++){
+			if(f_max < fLP.get(i)){
+				f_max = fLP.get(i);
+				idxMax = i;
+			}
+		}
+		f_max = f.length - 1 - (fLP.size()-1-idxMax);
+		List<Double> fLP1 = fLP.subList(0, (int) f_max+1);
+		List<Double> fLP2 = Arrays.asList(new Double[(int)Math.ceil(Math.sqrt(f_max))]);
+		fLP = new ArrayList<Double>(fLP1);
+		fLP.addAll(fLP2);
+		int szLPf = fLP.size();
+		
+		double xLP_max = (f_max+1)/(double) n;
+		int szLPx = (int) Math.ceil(Math.log(xLP_max/xLP_min)/Math.log(grid_factor)) +1;
+		double[] xLP = new double[szLPx];
+		for(int i=0;i<szLPx;i++) xLP[i] = xLP_min * Math.pow(grid_factor, i);
+		
+		double[] objf = new double[szLPx + 2*szLPf]; 
+		for(int i=szLPx;i<objf.length;i+=2)
+			objf[i] = 1.0/Math.sqrt(fLP.get((i-szLPx)/2)+1);
+		for(int i=szLPx+1;i<objf.length;i+=2)
+			objf[i] = 1.0/Math.sqrt(fLP.get((i-szLPx-1)/2)+1);
+		
+		double[][] A = new double[2*szLPf][szLPx+2*szLPf];
+		double[] b = new double[2*szLPf];
+		for(int i=0;i<szLPf;i++){
+			for(int j=0;j<szLPx;j++){
+				PoissonDistribution poisson = new PoissonDistribution(n*xLP[j]);
+				A[2*i][j] = poisson.probability(i+1);
+				A[2*i+1][j] = -1 * A[2*i][j];
+			}
+			A[2*i][szLPx+2*i] = -1;
+			A[2*i+1][szLPx+2*i+1] = -1;
+			b[2*i] = fLP.get(i);
+			b[2*i+1] = fLP.get(i);
+		}
+		double[] Aeq = new double[szLPx+2*szLPf];
+		for(int i=0;i<szLPx;i++) Aeq[i] = xLP[i];
+		double beq = LP_mass;
+		
+		for(int i=0;i<szLPx;i++){
+			for(int j=0;j<2*szLPf;j++)
+				A[j][i] = A[j][i]/xLP[i];
+			Aeq[i] = Aeq[i]/xLP[i];
+		}
+		
+		//results consists of x, slack, success, status, nit, message
+		
+		
+		return 0.0;
+	}
+	
 	public double chao92(){
 		if(n == 0)
 			return 0;
@@ -158,7 +322,7 @@ public class Estimator {
 				
 		return Math.max((double) c/cov + n*(1-cov)/cov*cv, c);
 	}
-	
+		
 	public double chao84(){
 		if(n == 0)
 			return 0;
@@ -167,6 +331,21 @@ public class Estimator {
 			return c;
 		
 		return Math.max(c+f[0]*f[0]/2/f[1], c);
+	}
+	
+	// First-order jackknife estimator
+	public double jackknife1(){
+		if(n == 0)
+			return 0;
+		return (double) c + f[0];
+	}
+	
+	// Second-order jackknife estimator
+	public double jackknife2(){
+		if(n == 0) return 0;
+		if(f.length < 2) return c;
+		
+		return (double) c + 2*f[0] - f[1];
 	}
 	
 	// # samples for workers: n_w[i], where i indexes worker.

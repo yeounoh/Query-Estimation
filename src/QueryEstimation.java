@@ -814,22 +814,22 @@ public class QueryEstimation {
 //			qe.runExperiment(config1); //uniform data
 
 			//num of sources : numSourceExp(boolean n_src_exp)
-			int[] s_size1b = incrementalSamples(30,500,20);
-			config1 = new Configuration("synt_db","unif",8,20,s_size1b);
-			config1.numSourceExp(true);
-			config1.setPublicityValueCorr(true);
-			config1.extraParam(1,2,4.0,false,false,false);
-			qe.runExperiment(config1); 
-			config1.extraParam(2,2,4.0,false,false,false);
-			qe.runExperiment(config1); 
-			config1.extraParam(3,2,4.0,false,false,false);
-			qe.runExperiment(config1); 
-			config1.extraParam(4,2,4.0,false,false,false);
-			qe.runExperiment(config1); 
-			config1.extraParam(5,2,4.0,false,false,false);
-			qe.runExperiment(config1);
-			config1.extraParam(6,2,4.0,false,false,false);
-			qe.runExperiment(config1); 
+//			int[] s_size1b = incrementalSamples(30,500,20);
+//			config1 = new Configuration("synt_db","unif",8,20,s_size1b);
+//			config1.numSourceExp(true);
+//			config1.setPublicityValueCorr(true);
+//			config1.extraParam(1,2,4.0,false,false,false);
+//			qe.runExperiment(config1); System.out.println("ok");
+//			config1.extraParam(2,2,4.0,false,false,false);
+//			qe.runExperiment(config1); 
+//			config1.extraParam(3,2,4.0,false,false,false);
+//			qe.runExperiment(config1); 
+//			config1.extraParam(4,2,4.0,false,false,false);
+//			qe.runExperiment(config1); 
+//			config1.extraParam(5,2,4.0,false,false,false);
+//			qe.runExperiment(config1);
+//			config1.extraParam(6,2,4.0,false,false,false);
+//			qe.runExperiment(config1); 
 //			config1.extraParam(7,2,4.0,false,false,false);
 //			qe.runExperiment(config1); 
 //			config1.extraParam(8,2,4.0,false,false,false);
@@ -889,7 +889,8 @@ public class QueryEstimation {
 			//heatmap
 //			int[] s_size1d = incrementalSamples(100,1000,100);
 //			config1 = new Configuration("synt_db","unif",1,200,s_size1d);
-//			config1.extraParam(20,2,1.0,false,false,true,false); //0.6 -> 0.3
+//			config1.extraParam(20,2,1.0,false,false,true); //0.6 -> 0.3
+//			config1.bucketExp(false);
 //			qe.runExperiment(config1);
 			
 			//Indexing (Monte-Carlo)
@@ -907,10 +908,10 @@ public class QueryEstimation {
 			
 			/** -------------- real-benchmark ------------ */
 			//real gdp data
-//			int[] s_size3 = incrementalSamples(20,160,5); //496
-//			Configuration config3 = new Configuration("real_db","gdp",3,1,s_size3); //data_type: 3, num_rep: 4
-//			//config3.extraParam(new String[]{"gdp","gdp1","gdp2","gdp3"}); //need num_rep = 3
-//			qe.runExperiment(config3); 
+			int[] s_size3 = incrementalSamples(20,160,5); //496
+			Configuration config3 = new Configuration("real_db","gdp",3,1,s_size3); //data_type: 3, num_rep: 4
+			//config3.extraParam(new String[]{"gdp","gdp1","gdp2","gdp3"}); //need num_rep = 3
+			qe.runExperiment(config3); 
 //			
 //			//real employee data
 //			int[] s_size4 = incrementalSamples(20,497,20); //989, 995

@@ -42,7 +42,7 @@ public class DataGenerator {
 	public Database generateDataset(String db_name, String table_name, boolean do_gen, int type, boolean pub_val_corr) throws Exception{
 		Database db = new Database();
 		db.connect(db_name);
-		System.out.println("database connected----");
+		
 		//generate data (samples) from population
 		if(do_gen){
 			db.drop();
@@ -51,7 +51,7 @@ public class DataGenerator {
 	
 			db.createTable(table_name); 
 			gen.loadDataset(db, table_name, type, pub_val_corr);
-			System.out.println("database connected----");
+			
 			if(type == 3){ //GDP value cleaning
 				//Data cleaning using Wikipedia GDP data
 				db.createTable("wiki"); 
