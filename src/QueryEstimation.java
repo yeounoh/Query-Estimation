@@ -34,15 +34,15 @@ public class QueryEstimation {
 	 * @param est_type: 0- chao92-based, 1- f1-based, 2- f12-based, 3- MC-based
 	 * @return
 	 */
-	public Result bucketApproach(Object[] sample, int n_bkt, double th, int bkt_type, int est_type, boolean ub_test){
+	public Result bucketApproach(Object[] sample, int n_bkt, double th, int bkt_type, int est_type, boolean ub_test, int base_est_type){
 		Bucket[] buckets= null; //number of buckets may vary
-		Estimator est = new Estimator(sample);
+		Estimator est = new Estimator(sample, base_est_type);
 		
 		if(bkt_type == 1){ //static bucket (equi-width)
 			buckets = new Bucket[n_bkt];
 			double width = (est.getMax() - est.getMin())/n_bkt; 
 			for(int bi=0;bi<n_bkt;bi++){
-				buckets[bi] = new Bucket(Math.floor(bi*width+est.getMin()), Math.ceil((bi+1)*width+est.getMin()));
+				buckets[bi] = new Bucket(Math.floor(bi*width+est.getMin()), Math.ceil((bi+1)*width+est.getMin()), base_est_type);
 			}
 			
 			for(Object s : sample){
@@ -66,8 +66,8 @@ public class QueryEstimation {
 		else if(bkt_type == 3){ //static bucket (equi-height)
 			buckets = new Bucket[n_bkt];
 			for(int bkt_idx=0;bkt_idx<n_bkt;bkt_idx++)
-				buckets[bkt_idx] = new Bucket();
-			double height = Math.ceil((double)sample.length/n_bkt); System.out.println(n_bkt +" , " + height);
+				buckets[bkt_idx] = new Bucket(base_est_type);
+			double height = Math.ceil((double)sample.length/n_bkt); 
 			new QuickSort().quickSort(sample,0,sample.length-1);
 			int bkt_idx = 0, cnt = 0;
 			for(Object s : sample){
@@ -93,17 +93,17 @@ public class QueryEstimation {
 		
 		for(int bi=0;bi<buckets.length;bi++){
 			Object[] samples_b = buckets[bi].getSamples().toArray();
-			est = new Estimator(samples_b);
-			chao_by_bucket[bi] = est.chao92();
+			est = new Estimator(samples_b, base_est_type);
+			chao_by_bucket[bi] = ub_test? est.countEstUpperBound():est.speciesEst(); //est.chao92(); 
 			chao_t += chao_by_bucket[bi];
 		}
 		
 		for(int bi=0;bi<buckets.length;bi++){
 			Object[] samples_b = buckets[bi].getSamples().toArray();
-			est = new Estimator(samples_b); 
+			est = new Estimator(samples_b, base_est_type); 
 			
 			cnt_by_bucket[bi] = samples_b.length; 
-			sum_by_bucket[bi] = ub_test? est.sumEstUpperBound():est.sumEst(); 
+			sum_by_bucket[bi] = ub_test? est.sumEstUpperBound():est.sumEst(); // sum estimation
 			sum_by_bucket_f1[bi] = est.sumf1(); 
 			sc_by_bucket[bi] = buckets[bi].getSampleCov();
 			cv_by_bucket[bi] = buckets[bi].getCoeffVar();
@@ -120,8 +120,15 @@ public class QueryEstimation {
 			csum_t += csum_by_bucket[bi];
 			avg_sc += sc_by_bucket[bi] * (double) samples_b.length/sample.length; 
 			avg_cv += cv_by_bucket[bi] * (double) samples_b.length/sample.length;
-			avg_t += chao_by_bucket[bi] == 0? 0 : sum_by_bucket[bi]/chao_by_bucket[bi] * (chao_by_bucket[bi]/chao_t); 
-			avgf1_t += est.getF1Count() == 0? 0 : sum_by_bucket_f1[bi]/est.getF1Count() * (chao_by_bucket[bi]/chao_t);
+			
+			if(ub_test){
+				avg_t += est.countCIUpper();
+				avgf1_t += est.sumCIUpper();
+			}
+			else{
+				avg_t += chao_by_bucket[bi] == 0? 0 : sum_by_bucket[bi]/chao_by_bucket[bi] * (chao_by_bucket[bi]/chao_t); 
+				avgf1_t += est.getF1Count() == 0? 0 : sum_by_bucket_f1[bi]/est.getF1Count() * (chao_by_bucket[bi]/chao_t);
+			}
 		}
 		//avg_t = sum_t/chao_t;
 		//avgf1_t = sumf1_t/chao_t;
@@ -147,14 +154,14 @@ public class QueryEstimation {
 	 * @param sample
 	 * @param n_bkt
 	 * @param th CV threshold to how much data skew to tolerate per bucket
-	 * @param n_worker: number of worker for monte carlo method
+	 * @param n_worker: number of worker for Monte Carlo method
 	 * @param est_type: 0- chao92-based, 1- f1-based, 2- f12-based, 3- MC-based
 	 * @return
 	 * @throws IOException 
 	 */
 	public Result bucketMCApproach(Object[] sample, int[] n_w, double th,boolean ideal,boolean ub_test) throws IOException{
 		Bucket[] buckets= null; //number of buckets may vary
-		Estimator est = new Estimator(sample);
+		Estimator est = new Estimator(sample, 0);
 		
 		int n = sample.length;
 		
@@ -170,7 +177,7 @@ public class QueryEstimation {
 		double avg_t = 0, avgf1_t = 0, cavg_t;
 		for(int bi=0;bi<buckets.length;bi++){
 			Object[] samples_b = buckets[bi].getSamples().toArray();
-			est = new Estimator(samples_b);
+			est = new Estimator(samples_b, 0);
 			
 			int n_b = samples_b.length;
 			
@@ -211,7 +218,7 @@ public class QueryEstimation {
 		
 	public Result MonteCarloPolyFit(Object[] sample, int[] n_w, boolean ideal) throws IOException {
 		
-		Estimator est = new Estimator(sample);
+		Estimator est = new Estimator(sample, 0);
 		
 		int cnt_lb = est.getUniqueCount();
 		int cnt_ub = (int) Math.ceil(est.chao92());
@@ -289,19 +296,36 @@ public class QueryEstimation {
 			case 9: fname += "uniform_l"+ conf.lambda; break;
 			case 10: fname += "revenue"; break;
 			case 11: fname += "uniform_w"+ conf.n_worker +"_l"+ conf.lambda; break;
+			case 12: fname += "uniform_s" + conf.shape; break;
 			default: fname += "N/S.txt"; break;
 		}
 		if(conf.heatmap)
 			fname += "_hm";
+		else if(conf.normal_mean_exp)
+			fname += "_normal_mean_l" + conf.lambda +"_w" + conf.n_worker;
 		else if(conf.st_only)
 			fname += "_only";
 		else if(conf.st_inject)
 			fname += "_inject";
 		else if(!conf.pub_val_corr)
 			fname += "_unc";
+		
+		switch(conf.base_est_type){
+			case 1: fname += "_chao84"; break;
+			case 2: fname += "_ace"; break;
+			
+			case 3: fname += "_jackknife1"; break;
+			case 4: fname += "_jackknife2"; break;
+			case 5: fname += "_horvitzthompson"; break;
+			
+			case 6: fname += "_unseen"; break;
+			default: break; //Chao92
+		}
+		
 		fname += ".txt";
 		
-		if(conf.data_type == 1 || conf.data_type == 2 || conf.data_type == 8 || conf.data_type == 9 || conf.data_type == 11){
+		if(conf.data_type == 1 || conf.data_type == 2 || conf.data_type == 8 || 
+				conf.data_type == 9 || conf.data_type == 11 || conf.data_type == 12){
 			if(conf.data_type == 2)
 				n_class = 50;
 			else
@@ -323,8 +347,11 @@ public class QueryEstimation {
 		//method3: Monte-Carlo Simulation
 		double[][][] mc_app_rep = conf.heatmap? null : new double[conf.s_size.length][conf.n_rep][];
 		
-		//method4: Monte-Carlo Bucket Simulation
-		double[][][] mcbkt_rep = (conf.bkt_exp || conf.heatmap)? null : new double[conf.s_size.length][conf.n_rep][];
+//		//method4: Monte-Carlo Bucket Simulation
+//		double[][][] mcbkt_rep = (conf.bkt_exp || conf.heatmap)? null : new double[conf.s_size.length][conf.n_rep][];
+		
+		//test if mean value is normally distributed
+		double[][] mean_value_rep = conf.normal_mean_exp? new double[conf.s_size.length][conf.n_rep] : null;
 		
 		for(int ri=0;ri<conf.n_rep;ri++){
 			if(ri%100 == 0)
@@ -337,7 +364,8 @@ public class QueryEstimation {
 				int assigned_sample = 0;
 				
 				//synthetic data experiment
-				if(conf.data_type == 1 || conf.data_type == 2 || conf.data_type == 8 || conf.data_type == 9 || conf.data_type == 11){ 
+				if(conf.data_type == 1 || conf.data_type == 2 || conf.data_type == 8 || 
+						conf.data_type == 9 || conf.data_type == 11 || conf.data_type == 12){ 
 					n_w = new int[conf.n_worker];
 					ArrayList<Object> samples = new ArrayList<Object>();
 					
@@ -350,7 +378,6 @@ public class QueryEstimation {
 						}
 						else{
 							if(inject_streaker){
-								
 								if(conf.s_size[si] >= 160){
 									if(!injected){
 										n_w[i] = 100;
@@ -365,6 +392,7 @@ public class QueryEstimation {
 								}
 							}
 							else{
+								// as n_worker increases, the sample proportion of each source decreases.
 								n_w[i] = Math.min((int) Math.ceil(conf.s_size[si]/conf.n_worker), n_class);
 							}
 						}
@@ -376,7 +404,7 @@ public class QueryEstimation {
 						
 						//Sample randomly from the base_table
 						Object[] s_worker = db.sampleByRandom(n_w[i], conf.tb_name, n_class, 
-								conf.sampling_type, conf.lambda); 
+								conf.sampling_type, conf.lambda, conf.shape); 
 						for(Object s : s_worker){
 							samples.add(s); 
 						}
@@ -384,6 +412,13 @@ public class QueryEstimation {
 					while(samples.size() > conf.s_size[si])
 						samples.remove(samples.size()-1);
 					sample = samples.toArray();
+					
+					//test if mean value is normally distributed
+					if (conf.normal_mean_exp){
+						Estimator est = new Estimator(sample, 0); 
+						double avg_value = est.getSampleMean();
+						mean_value_rep[si][ri] = avg_value;
+					}
 				}
 				//real data experiment
 				else if(conf.data_type == 3 || conf.data_type == 4 || conf.data_type == 5 || conf.data_type == 6 ||
@@ -418,19 +453,19 @@ public class QueryEstimation {
 					System.out.println("Unknown data type");
 					return;
 				}
-				//System.out.println("___________________|naive|buckt|monte|");
-				long startTime = System.currentTimeMillis();
+				//test if mean value is normally distributed
+				if(conf.normal_mean_exp){
+					continue; // we don't have to do actual estimation.
+				}
+				
+				
 				//naive approach
-				Result naive = (conf.bkt_exp || conf.heatmap)? null : bucketApproach(sample, 1, 0.0, 1, 0,false);
-				//Result naive_ub = (conf.mc_index || conf.heatmap)? null : bucketApproach(sample, 1, 0.0, 1, 0,true);
-				long endTime = System.currentTimeMillis();
-				//System.out.print("Elapsed time (n="+conf.s_size[si] + ") :  "+(endTime - startTime) +"  ");
-				startTime = System.currentTimeMillis();
+				Result naive = (conf.bkt_exp || conf.heatmap)? null : bucketApproach(sample, 1, 0.0, 1, 0,false, conf.base_est_type);
+				Result naive_ub = (conf.heatmap)? null : bucketApproach(sample, 1, 0.0, 1, 0,true, conf.base_est_type);
+				
 				//ER auto approach
-				Result bkt_auto = (conf.heatmap || conf.bkt_exp)? null : bucketApproach(sample, 0, 0.05, 2, 0,false);
-				endTime = System.currentTimeMillis();
-				//System.out.print("   "+(endTime - startTime)+"  ");
-				startTime = System.currentTimeMillis();
+				Result bkt_auto = (conf.heatmap || conf.bkt_exp)? null : bucketApproach(sample, 0, 0.05, 2, 0,false, conf.base_est_type);
+				
 				//Monte-Carlo Simulation
 				Result mc_app = (conf.heatmap || conf.bkt_exp)? null : MonteCarloPolyFit(sample, n_w,false); 
 				/**
@@ -442,28 +477,27 @@ public class QueryEstimation {
 					continue;
 				}
 				*/
-				endTime = System.currentTimeMillis();
-				//System.out.print(" "+(endTime - startTime)+"\n");
+				
 				//Monte-Carlo bucket simulation
-				Result mcbkt = (conf.bkt_exp || conf.heatmap || conf.n_src_exp)? null : bucketMCApproach(sample, n_w, 0.05, false, false);
+//				Result mcbkt = (conf.bkt_exp || conf.heatmap || conf.n_src_exp)? null : bucketMCApproach(sample, n_w, 0.05, false, false);
 				
 				//estimate population statistics
 				if(!(conf.heatmap || conf.bkt_exp)){
 					naive_rep[si][ri] = naive.summary();
 					mc_app_rep[si][ri] = mc_app.summary(); 
-					mcbkt_rep[si][ri] = conf.n_src_exp? null : mcbkt.summary();
+//					mcbkt_rep[si][ri] = conf.n_src_exp? null : mcbkt.summary();
 				}
-				if(! conf.bkt_exp) bkt_auto_rep[si][ri] = bkt_auto.summary(); 
-				//naive_ub_rep[si][ri] = naive_ub.summary();
+				if(!conf.bkt_exp) bkt_auto_rep[si][ri] = bkt_auto.summary(); 
+				naive_ub_rep[si][ri] = naive_ub.summary();
 				
 				//---------static bucket experiment-------------//
 				if(conf.bkt_exp){
-					Result dynamic = bucketApproach(sample, 0, 0.05, 2, 0,false);
+					Result dynamic = bucketApproach(sample, 0, 0.05, 2, 0,false, conf.base_est_type);
 					dynamic_rep[si][ri] = dynamic.summary();
 					for(int nbi=0;nbi<conf.nb.length;nbi++){
 						int nb = conf.nb[nbi];
-						Result equi_height = bucketApproach(sample, nb, 0.05, 3, 0, false); 
-						Result equi_width = bucketApproach(sample, nb, 0.05, 1, 0, false);
+						Result equi_height = bucketApproach(sample, nb, 0.05, 3, 0, false, conf.base_est_type); 
+						Result equi_width = bucketApproach(sample, nb, 0.05, 1, 0, false, conf.base_est_type);
 						
 						height_rep[si][ri][nbi] = equi_height.summary();
 						width_rep[si][ri][nbi] = equi_width.summary();
@@ -515,8 +549,8 @@ public class QueryEstimation {
 				bins_max = new Bucket[num_bin];
 				bins_min = new Bucket[num_bin];
 				for(int bi=0;bi<bins_max.length;bi++){
-					bins_max[bi] = new Bucket(max_value-((bins_max.length-1-bi)+1)*bin_width,max_value-(bins_max.length-1-bi)*bin_width);
-					bins_min[bi] = new Bucket(min_value+bi*bin_width,min_value+(bi+1)*bin_width);
+					bins_max[bi] = new Bucket(max_value-((bins_max.length-1-bi)+1)*bin_width,max_value-(bins_max.length-1-bi)*bin_width, conf.base_est_type);
+					bins_min[bi] = new Bucket(min_value+bi*bin_width,min_value+(bi+1)*bin_width, conf.base_est_type);
 				}
 				
 				for(int ri=0;ri<conf.n_rep;ri++){
@@ -585,6 +619,23 @@ public class QueryEstimation {
 		
 		FileOutputStream fos= new FileOutputStream(fname);
 		BufferedWriter bw= new BufferedWriter(new OutputStreamWriter(fos));
+		
+		//write out mean values to a file
+		if(conf.normal_mean_exp){
+			DecimalFormat df = new DecimalFormat("#.00");
+			for(int ri=0;ri<conf.n_rep;ri++){
+				String row = "";
+				for(int si=0;si<conf.s_size.length;si++){
+					if(si<conf.s_size.length-1)
+						row += df.format(mean_value_rep[si][ri]) + ",";
+					else
+						row += df.format(mean_value_rep[si][ri]);
+				}
+				bw.write(row); bw.newLine(); bw.flush();
+			}
+			return;
+		}
+		
 		if(!conf.heatmap){
 			bw.write("0:s_size | 1:naive_avg | 2:naive_std | 3:naivef1 | 4:naivef1_std | 5:bkt_avg | 6:bkt_std | 7:bktf1_avg | 8:bktf1_std | "
 					+ "9:bktauto_avg | 10:bktauto_std | 11:bktf1auto_avg | 12:bktf1auto_std | 13:uniq_avg | 14:uniq_std | 15:nbktauto_avg | 16:nbktf1auto_avg |"
@@ -592,8 +643,9 @@ public class QueryEstimation {
 					+ "25:bkt_avg_avg | 26:bktf1_avg_avg | 27:bktauto_avg_avg | 28:bktf1auto_avg_avg | 29:mc_avg_avg | 30:max_orig_avg | 31:max_est_avg |"
 					+ "32:naive_cavg_avg | 33:mcf1_avg | 34:mcf1_std | 35:mcf1_avg_avg | 36:min_orig_avg | 37:min_est_avg | 38:mcbucket_avg | 39:mcbucketf1_avg | "
 					+ "40:mcbucket_avg_avg | 41:mcbucketf1_avg_avg | 42:mc_avg_ideal | 43:mcf1_avg_ideal | 44:mcbucket_avg_ideal | 45:mcbucketf1_avg_ideal | 46: specific_item_cnt |"
-					+ "47:max_std | 48:max_est_std | 49:min_std | 50:min_est_std | 51:naive_ub_avg | 52:max_report | 53:min_report |"
-					+ "54:max_prec | 55:max_rec | 56:min_prec | 57:min_rec | 58:max_prec_obs | 59:max_rec_obs | 60:min_prec_obs | 61:min_rec_obs |");
+					+ "47:max_std | 48:max_est_std | 49:min_std | 50:min_est_std | 51:naive_ub_avg | 52:max_report | 53:min_report | 54:naive_ci_avg"
+					+ "55:count_ub_avg | 56:count_ci_avg ");
+					//+ "54:max_prec | 55:max_rec | 56:min_prec | 57:min_rec | 58:max_prec_obs | 59:max_rec_obs | 60:min_prec_obs | 61:min_rec_obs |");
 			bw.newLine();
 			bw.flush();
 		}
@@ -602,7 +654,7 @@ public class QueryEstimation {
 			double avg_csum=0, std_csum=0, avg_cavg=0;
 			double avg=0, avg_f1=0, avg_bkt=0, avg_bktf1=0, avg_bkt_auto=0, avg_bktf1_auto=0, avg_uniq=0, avg_chao=0, avg_mc_app=0, avg_mcf1_app=0, avg_mcbkt=0, avg_mcbktf1=0, avg_mc_ideal=0, avg_mcf1_ideal=0, avg_mcbkt_ideal=0, avg_mcbktf1_ideal=0;
 			double std=0, std_f1=0, std_bkt=0, std_bktf1=0, std_bkt_auto=0, std_bktf1_auto=0, std_uniq=0, std_chao=0, std_mc_app=0, std_mcf1_app=0, std_max=0,std_max_est=0,std_min=0,std_min_est=0;
-			double avg_nbktauto=0, avg_nbktf1auto=0, avg_max_orig=0, avg_max_est=0, avg_min_orig=0, avg_min_est=0, avg_naive_ub=0;
+			double avg_nbktauto=0, avg_nbktf1auto=0, avg_max_orig=0, avg_max_est=0, avg_min_orig=0, avg_min_est=0, avg_naive_ub=0, avg_naive_ci=0, avg_count_ci=0, avg_count_ub=0;
 			
 			double avg_spec_cnt=0, max_report=0, min_report=0;
 			double max_tp=0, max_fp=0, max_tn=0, max_fn=0, max_tp_obs=0, max_fp_obs=0, max_tn_obs=0, max_fn_obs=0 ;
@@ -637,7 +689,11 @@ public class QueryEstimation {
 					avg_avg_f1 += naive_rep[si][ri][16]/conf.n_rep;
 					avg_spec_cnt += naive_rep[si][ri][14]/conf.n_rep;
 					
-					//avg_naive_ub += naive_ub_rep[si][ri][4]/conf.n_rep;
+					//upper bound
+					avg_naive_ub += naive_ub_rep[si][ri][4]/conf.n_rep;
+					avg_naive_ci += naive_ub_rep[si][ri][16]/conf.n_rep;
+					avg_count_ub += naive_ub_rep[si][ri][2]/conf.n_rep;
+					avg_count_ci += naive_ub_rep[si][ri][8]/conf.n_rep;
 					
 					avg_bkt_auto += bkt_auto_rep[si][ri][4]/conf.n_rep;
 					avg_avg_bkt_auto += bkt_auto_rep[si][ri][8]/conf.n_rep;
@@ -656,10 +712,10 @@ public class QueryEstimation {
 					avg_mcf1_app += mc_app_rep[si][ri][3]/conf.n_rep;
 					avg_avg_mcf1_app += mc_app_rep[si][ri][4]/conf.n_rep;
 					
-					avg_mcbkt += mcbkt_rep[si][ri][4]/conf.n_rep;
-					avg_avg_mcbkt += mcbkt_rep[si][ri][8]/conf.n_rep;
-					avg_mcbktf1 += mcbkt_rep[si][ri][10]/conf.n_rep;
-					avg_avg_mcbktf1 += mcbkt_rep[si][ri][11]/conf.n_rep;
+//					avg_mcbkt += mcbkt_rep[si][ri][4]/conf.n_rep;
+//					avg_avg_mcbkt += mcbkt_rep[si][ri][8]/conf.n_rep;
+//					avg_mcbktf1 += mcbkt_rep[si][ri][10]/conf.n_rep;
+//					avg_avg_mcbktf1 += mcbkt_rep[si][ri][11]/conf.n_rep;
 				}
 				avg_max_orig += bkt_auto_rep[si][ri][9]/conf.n_rep;
 				if(bkt_auto_rep[si][ri][10] != -1){
@@ -767,7 +823,7 @@ public class QueryEstimation {
 					+ " " + df.format(avg_mc_ideal) + " " + df.format(avg_mcf1_ideal)
 					+ " " + df.format(avg_mcbkt_ideal) + " " + df.format(avg_mcbktf1_ideal) + " " + df.format(avg_spec_cnt)
 					+ " " + df.format(std_max) + " " + df.format(std_max_est) + " " + df.format(std_min) + " " + df.format(std_min_est)
-					+ " " + df.format(avg_naive_ub) + " " + df.format(max_report) + " " + df.format(min_report)
+					+ " " + df.format(avg_naive_ub) + " " + df.format(max_report) + " " + df.format(min_report) + " " + df.format(avg_naive_ci) + " " + df.format(avg_count_ub) + " " + df.format(avg_count_ci)
 //					+ " " + df.format(max_prec) + " " + df.format(max_rec) + " " + df.format(min_prec) + " " + df.format(min_rec)
 //					+ " " + df.format(max_prec_obs) + " " + df.format(max_rec_obs) + " " + df.format(min_prec_obs) + " " + df.format(min_rec_obs)
 					);
@@ -795,9 +851,11 @@ public class QueryEstimation {
 //			config1.extraParam(20, 2, 1.0, false, true, false,false);
 //			qe.runExperiment(config1);
 			
-			//num of sources
+			// varying num of sources experiment
 //			int[] s_size1b = {10,20,30,40,50,80,140,200,260,320,380,440,500};
 //			config1 = new Configuration("synt_db","unif",8,20,s_size1b);
+			//// normal (positive) publicity-value correlation
+			// varying number of sources, each sampling without replacement
 //			config1.setPublicityValueCorr(true);
 //			config1.extraParam(1,2,1.0,false,false,false);
 //			qe.runExperiment(config1); //uniform data
@@ -839,21 +897,26 @@ public class QueryEstimation {
 //			config1.extraParam(10,2,4.0,false,false,false);
 //			qe.runExperiment(config1); 
 			
-//			//varying degrees of data skew
+			//varying degrees of data skew
 //			int[] s_size1c = {80,140,200,260,320,380,440,500};
-//			config1 = new Configuration("synt_db","unif",9,20,s_size1c);
-//			config1.extraParam(20,2,0.0,false,false,false); //1
-//			//config1.bucketExp(true);
-//			//config1.extraParam(new int[]{1,2,3,4,5,6,7,8,9,10});
-//			qe.runExperiment(config1);
-//			config1.extraParam(20,2,1.0,false,false,false,false); //0.6
-//			qe.runExperiment(config1);
-//			config1.extraParam(20,2,1.0,false,false,false,false); //0.13
-//			config1.setPublicityValueCorr(false);
-//			qe.runExperiment(config1);
-//			config1.setPublicityValueCorr(true);
-//			config1.extraParam(20,2,4.0,false,false,false,false); //0.018
-//			qe.runExperiment(config1);
+//			config1 = new Configuration("synt_db","unif",9,50,s_size1c);
+//			for(int base_est_type=0;base_est_type<=5;base_est_type++){
+//				config1.setBaseEstimatorType(base_est_type);
+//				config1.extraParam(20,2,0.0,false,false,false); //1
+//				//config1.bucketExp(true);
+//				//config1.extraParam(new int[]{1,2,3,4,5,6,7,8,9,10});
+//				qe.runExperiment(config1);
+//				config1.extraParam(20,2,1.0,false,false,false); //0.6
+//				qe.runExperiment(config1);
+//				config1.extraParam(20,2,1.0,false,false,false); //0.13
+//				config1.setPublicityValueCorr(false);
+//				qe.runExperiment(config1);
+//				config1.setPublicityValueCorr(true);
+//				config1.extraParam(20,2,4.0,false,false,false); //0.018
+//				qe.runExperiment(config1);
+//			}
+			
+			
 			
 			// num of sources, skew (data_type 11)
 //			int[] s_size1bc = {80,140,200,260,320,380,440,500};
@@ -900,24 +963,83 @@ public class QueryEstimation {
 //			qe.runExperiment(config1);
 			
 			//regular synthetic data exp
-			//int[] s_size1c = {200,300,400,500,600,700,800,900,1000,1100,1200,1300,1400,1500}; //upper bound
-//			int[] s_size1c = {100,200,300,400,500,600,700,800};
+			//// upper bound
+//			int[] s_size1c = {200,300,400,500,600,700,800,900,1000,1100,1200}; //upper bound
+//			//int[] s_size1c = {100,200,300,400,500,600,700,800};
 //			config1 = new Configuration("synt_db","unif",1,20,s_size1c);
-//			config1.extraParam(20,2,1.0,false,false,false,false); //0.6
+//			config1.setPublicityValueCorr(true);
+//			config1.extraParam(10,2,0.0,false,false,false); //0.6
 //			qe.runExperiment(config1);
+//			config1.extraParam(10,2,1.0,false,false,false); //0.6
+//			qe.runExperiment(config1);
+//			config1.extraParam(10,2,4.0,false,false,false); //0.6
+//			qe.runExperiment(config1);
+			
+			/*
+			 * Simulation study for mean value substitution for bounds.
+			 * Population [10:10:1000] contains 100 unique items
+			 * @ sample size: 200 500 1000 
+			 * @ number of sources: 10, 50
+			 * @ number of items ([1:10:1000]): 100
+			 */
+//			int[] s_size_ = {200, 500};
+//			config1 = new Configuration("synt_db","unif",1,1000,s_size_);
+//			config1.setPublicityValueCorr(true);
+//			config1.normalMeanExp(true);
+//			config1.extraParam(10,2,0.0,false,false,false);
+//			qe.runExperiment(config1);
+//			config1.extraParam(10,2,1.0,false,false,false);
+//			qe.runExperiment(config1);
+//			config1.extraParam(10,2,4.0,false,false,false);
+//			qe.runExperiment(config1);
+//			config1.extraParam(10,2,-1.0,false,false,false);
+//			qe.runExperiment(config1);
+			
+			//negative & positive publicity-value correlation
+//			int[] s_size1c = {80,140,200,260,320,380,440,500};
+//			config1 = new Configuration("synt_db","unif",9,20,s_size1c);
+//			config1.extraParam(20,2,1.0,false,false,false);
+//			config1.setPublicityValueCorr(true);
+//			qe.runExperiment(config1);
+//			config1.extraParam(20,2,-1.0,false,false,false);
+//			qe.runExperiment(config1);
+			
+			/*
+			 * Simulation study for robustness of MC estimator.
+			 * Population [10:10:1000] contains 100 unique items, with gamma publicity distribution 
+			 * @ sample size: 200 500 1000 
+			 * @ number of sources: 10, 50
+			 * @ number of items ([1:10:1000]): 100
+			 */
+			int[] s_size1c = {80,140,200,260,320,380,440,500};
+			config1 = new Configuration("synt_db","unif",12,10,s_size1c); // 12: shape experiment
+			config1.extraParam(10,2,1.0,false,false,false);
+			config1.setPublicityValueCorr(true);
+			config1.setShapeParam(1.0);
+			qe.runExperiment(config1);
+			config1.setShapeParam(20.0);
+			qe.runExperiment(config1);
+			config1.setShapeParam(50.0);
+			qe.runExperiment(config1);
 			
 			/** -------------- real-benchmark ------------ */
 			//real gdp data
-			int[] s_size3 = incrementalSamples(20,160,5); //496
-			Configuration config3 = new Configuration("real_db","gdp",3,1,s_size3); //data_type: 3, num_rep: 4
-			//config3.extraParam(new String[]{"gdp","gdp1","gdp2","gdp3"}); //need num_rep = 3
-			qe.runExperiment(config3); 
-//			
-//			//real employee data
+//			int[] s_size3 = incrementalSamples(20,160,5); //496
+//			Configuration config3 = new Configuration("real_db","gdp",3,1,s_size3); //data_type: 3, num_rep: 4
+//			//config3.extraParam(new String[]{"gdp","gdp1","gdp2","gdp3"}); //need num_rep = 3
+//			for(int base_est_type=0;base_est_type<=5;base_est_type++){
+//				config3.setBaseEstimatorType(base_est_type);
+//				qe.runExperiment(config3); 
+//			}
+			
+			//real employee data
 //			int[] s_size4 = incrementalSamples(20,497,20); //989, 995
 //			Configuration config4 = new Configuration("real_db","employee",4,1,s_size4);
 //			//config4.extraParam(new String[]{"employee","employee1"});
-//			qe.runExperiment(config4); 
+//			for(int base_est_type=0;base_est_type<=0;base_est_type++){
+//				config4.setBaseEstimatorType(base_est_type);
+//				qe.runExperiment(config4); 
+//			}
 			
 			//real employee data (static bucket testing)
 //			int[] s_size4_bkt = incrementalSamples(20,497,20); //989, 995
@@ -925,11 +1047,14 @@ public class QueryEstimation {
 //			config4_bkt.bucketExp(true);
 //			config4_bkt.extraParam(new int[]{1,2,3,4,5,6,7,8,9,10});
 //			qe.runExperiment(config4_bkt); 
-//			
-//			//real EVM data (photon beam)
+			
+			//real EVM data (photon beam)
 //			int[] s_size5 = incrementalSamples(20,812,20);
 //			Configuration config5 = new Configuration("real_db","evm",5,1,s_size5);
-//			qe.runExperiment(config5); 
+//			for(int base_est_type=0;base_est_type<=5;base_est_type++){
+//				config5.setBaseEstimatorType(base_est_type);
+//				qe.runExperiment(config5); 
+//			}
 			
 			//real EVM data (Appendicitis)
 //			int[] s_size6 = incrementalSamples(40,974,40);
@@ -945,7 +1070,10 @@ public class QueryEstimation {
 //			int[] s_size10 = incrementalSamples(20,495,20);
 //			Configuration config10 = new Configuration("real_db","revenue",10,1,s_size10);
 //			//config10.extraParam(new String[]{"revenue","revenu1"}); //need num_rep = 2
-//			qe.runExperiment(config10); 
+//			for(int base_est_type=0;base_est_type<=5;base_est_type++){
+//				config10.setBaseEstimatorType(base_est_type);
+//				qe.runExperiment(config10); 
+//			}
 			
 			
 		} 

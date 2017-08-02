@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Random;
 
 import com.mysql.jdbc.exceptions.jdbc4.MySQLSyntaxErrorException;
+import org.apache.commons.math3.distribution.GammaDistribution;
 
 public class Database {
 	private String db_name = null;
@@ -96,16 +97,18 @@ public class Database {
 	}
 	
 	/**
-	 * 
+	 * One time sampling from the base table, called by a single source/worker.
 	 * @param s_size: sample size
 	 * @param n_class: sampling with replacement need to know the number of item classes.
 	 * @param table: table name
 	 * @param sampling_type: 1- sampling with replacement, 2- sampling without replacement
 	 * @param lambda: value-publicity correlation factor (0- no correlation)
+	 * @param shape: shape parameter of gamma publicity distribution.
 	 * @return samples
 	 * @throws SQLException
 	 */
-	public Object[] sampleByRandom(int s_size, String table, int n_class, int sampling_type, double lambda) throws SQLException {
+	public Object[] sampleByRandom(int s_size, String table, int n_class, int sampling_type, 
+			double lambda, double shape) throws SQLException {
 		if(sampling_type == 2 && s_size > n_class){
 			System.out.println("sampleByRandom(): "+n_class+" "+s_size);
 			return null;
@@ -115,7 +118,7 @@ public class Database {
 		HashMap<Integer,String> map = new HashMap<Integer,String>();
 		Object[] result = new Object[s_size];
 		statement = connect.createStatement();
-		
+
 		int idx= 0;
 		while(idx < s_size){
 			//sampling with replacement
@@ -128,7 +131,7 @@ public class Database {
 				resultSet = statement.executeQuery(query);
 			}
 			//sampling without replacement
-			if(sampling_type == 2){ //System.out.println("sampling " + s_size +" out of " + n_class + " items.");
+			if(sampling_type == 2){ 
 				String query = "select * from " + table + " order by rand() limit " + n_class;
 				resultSet = statement.executeQuery(query);
 			}
@@ -142,18 +145,33 @@ public class Database {
 				int rank = resultSet.getInt("rank"); 
 				String[] ids = {source_id, record_id};
 				
-				double pdf = Math.exp(-1*(rank)*lambda/n_class); // always accept if lambda = 0
+				double pdf = 1.0;
+				// Exponential distribution, 
+				// scaled by 1/lambda to ensure p>>0.1 for all items rank [0.01 ... 1.00] 
+				if (shape == 1.0){
+					if (lambda >= 0.0)
+						pdf = Math.exp(-1*(rank)*lambda/n_class); // always accept if lambda = 0
+					else //lambda < 0.0, negatively correlated
+						pdf = Math.exp(-1*(n_class-rank+1)*(-1*lambda)/n_class);
+				}
+				// Gamma distribution (shape, lambda)
+				else {
+					GammaDistribution gamma = new GammaDistribution(shape, lambda);
+					if (lambda > 0.0)
+						pdf = gamma.density(rank)*20 + 0.1; //scaling
+					else
+						System.err.println("Need scale>0 for Gamma dist.");
+				}
 				if(rand.nextDouble() <= pdf && !map.containsKey(rank)){
 					result[idx++] = new DataItem(ids, timestamp, name, value, rank);
-					if(sampling_type == 2){ //System.out.print(rank + " ");
+					if(sampling_type == 2){ 
 						map.put(rank, null);
 					}
 				}
-			}//System.out.print("\n");
+			}
 			if(sampling_type == 1)
 				statement.execute("drop table temp");
 		}
-		
 		return result;
 	}
 	

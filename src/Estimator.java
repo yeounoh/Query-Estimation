@@ -15,6 +15,13 @@ import java.util.Set;
 
 import org.apache.commons.math3.distribution.PoissonDistribution;
 
+import scpsolver.constraints.*;
+import scpsolver.lpsolver.LinearProgramSolver;
+import scpsolver.lpsolver.SolverFactory;
+import scpsolver.problems.LinearProgram;
+
+
+
 public class Estimator {
 	
 	private int n; //sample size
@@ -38,8 +45,13 @@ public class Estimator {
 	private int c_rare; //the number of rare species in a sample (each with 10 or fewer individuals)
 	private int c_abun; //the number of abundant species in a sample (each with more than 10 individuals)
 	private int n_rare; //the total number of individuals in the rare species
+	
+	// base estimator selection
+	private int base_est_type;
+	
+	public Estimator(Object[] sample, int base_est_type){
+		this.base_est_type = base_est_type;
 		
-	public Estimator(Object[] sample){
 		specific_item_cnt = 0;
 		
 		c_sum = 0;
@@ -48,7 +60,7 @@ public class Estimator {
 		min = Double.MAX_VALUE; 
 		max = Double.MIN_VALUE;
 		//hist = new HashMap<String,HistBar>();
-		dist = new HashMap<Integer, double[]>(); //Double[]{count, value}
+		dist = new HashMap<Integer, double[]>(); //double[]{count, value} extended to double[]{count, value, incidence}
 		samples = new HashMap<Integer,Object>();
 		
 		for(Object s:sample){
@@ -116,6 +128,8 @@ public class Estimator {
 		this.c_rare = c_rare;
 		this.c_abun = c_abun;
 		this.n_rare = n_rare;
+		
+		
 	}
 	
 	public int getF1Count(){
@@ -167,9 +181,40 @@ public class Estimator {
 		return min;
 	}
 	
+	// species estimation wrapper
+	public double speciesEst(){
+		switch(base_est_type){
+			case 1: return chao84();
+			case 2: return ACE();
+			
+			case 3: return jackknife1(); 
+			case 4: return jackknife2();
+			case 5: return HorvitzThompson();
+			
+			case 6: return unseen();
+			default: return chao92();
+		}
+	}
+	
+	// Horvitz-Thompson estimator, modified with Ashbridge and Gouldie (2000)'s sample coverage adjustment.
+	public double HorvitzThompson(){
+		if(n == 0) return 0;
+		
+		double cov = 1 - (double) f[0]/n;
+		if(cov == 0.0) return chao92();
+		
+		double est = 0.0;
+		for(double[] v : dist.values()){
+			double pi = v[0]/((double) n);
+			est += 1.0 / (1-Math.pow((1-cov*pi),n));
+		}
+		
+		return est;
+	}
+	
 	// Abundance Coverage Estimator
 	public double ACE(){
-		if(n == 0)
+		if(n_rare == 0)
 			return 0;
 		
 		double cov_ACE = 1 - (double) f[0]/n_rare;
@@ -181,7 +226,7 @@ public class Estimator {
 			cv = Math.sqrt(n);
 		else{
 			int sum = 0;
-			for(int i=0;i<10;i++)
+			for(int i=0;i<Math.min(10,f.length);i++)
 				sum += i*(i+1)*f[i];
 			
 			cv = Math.max((double) c_rare/cov_ACE*((double) sum/(double) n_rare/(double) (n_rare-1))-1, 0);
@@ -225,6 +270,8 @@ public class Estimator {
 					fLP.add((double) f[i]);
 				}
 			}
+			else
+				fLP.add(0.0);
 		}
 		
 		// no LP portion
@@ -245,21 +292,21 @@ public class Estimator {
 		double xhistxsum = 0.0;
 		for(int i=0;i<x.size();i++) xhistxsum += x.get(i) * histx.get(i);
 		double LP_mass = 1 - xhistxsum;
-		double f_max = 0.0;
-		int idxMax = 0;
-		for(int i=0;i<fLP.size();i++){
-			if(f_max < fLP.get(i)){
-				f_max = fLP.get(i);
-				idxMax = i;
+		int idxNonZero = 0;
+		for(int i=fLP.size()-1;i >= 0;i--){
+			if(fLP.get(i) > 0){
+				idxNonZero = i;
 			}
 		}
-		f_max = f.length - 1 - (fLP.size()-1-idxMax);
+		
+		double f_max = f.length - 1 - (idxNonZero);
 		List<Double> fLP1 = fLP.subList(0, (int) f_max+1);
-		List<Double> fLP2 = Arrays.asList(new Double[(int)Math.ceil(Math.sqrt(f_max))]);
+		Double[] fLP2_zeros = new Double[(int)Math.ceil(Math.sqrt(f_max))];
+		for(int i=0;i<(int)Math.ceil(Math.sqrt(f_max));i++) fLP2_zeros[i] = 0.0;
+		List<Double> fLP2 = Arrays.asList(fLP2_zeros);
 		fLP = new ArrayList<Double>(fLP1);
 		fLP.addAll(fLP2);
 		int szLPf = fLP.size();
-		
 		double xLP_max = (f_max+1)/(double) n;
 		int szLPx = (int) Math.ceil(Math.log(xLP_max/xLP_min)/Math.log(grid_factor)) +1;
 		double[] xLP = new double[szLPx];
@@ -269,8 +316,7 @@ public class Estimator {
 		for(int i=szLPx;i<objf.length;i+=2)
 			objf[i] = 1.0/Math.sqrt(fLP.get((i-szLPx)/2)+1);
 		for(int i=szLPx+1;i<objf.length;i+=2)
-			objf[i] = 1.0/Math.sqrt(fLP.get((i-szLPx-1)/2)+1);
-		
+			objf[i] = 1.0/Math.sqrt(fLP.get((i-szLPx)/2)+1);
 		double[][] A = new double[2*szLPf][szLPx+2*szLPf];
 		double[] b = new double[2*szLPf];
 		for(int i=0;i<szLPf;i++){
@@ -295,9 +341,51 @@ public class Estimator {
 		}
 		
 		//results consists of x, slack, success, status, nit, message
+		LinearProgram lp = new LinearProgram(objf);
+		for(int i=0;i<A.length;i++)
+			lp.addConstraint( new LinearSmallerThanEqualsConstraint(A[i],b[i],"c"+i) );
+		lp.addConstraint( new LinearEqualsConstraint(Aeq,beq,"ceq") );
+		lp.setMinProblem(true);
+		LinearProgramSolver solver = SolverFactory.newDefault();
+		double[] sol = solver.solve(lp);
+		double val = 0.0;
+		for(int i=0;i<objf.length;i++)
+			val += objf[i] * sol[i];
 		
+		// second LP problem
+		double[] objf2 = new double[szLPx + 2*szLPf];
+		for(int i=0;i<szLPx;i++) objf2[i] = 1;
+		double[][] A2 = new double[A.length+1][objf.length];
+		for(int i=0;i<A.length;i++)
+			A2[i] = A[i];
+		A2[A2.length-1] = objf;
+		double[] b2 = new double[b.length+1];
+		for(int i=0;i<b.length;i++)
+			b2[i] = b[i];
+		b2[b2.length-1] = val + alpha;
 		
-		return 0.0;
+		for(int i=0;i<szLPx;i++)
+			objf2[i] = objf2[i]/xLP[i];
+		
+		LinearProgram lp2 = new LinearProgram(objf2);
+		for(int i=0;i<A2.length;i++)
+			lp2.addConstraint( new LinearSmallerThanEqualsConstraint(A2[i],b2[i],"c"+i));
+		lp2.addConstraint( new LinearEqualsConstraint(Aeq,beq,"ceq") );
+		double[] sol2 = solver.solve(lp2);
+		
+		// combine the dense and sparse region solutions
+		for(int i=0;i<szLPx;i++) sol2[i] = sol2[i]/xLP[i];
+		for(int i=0;i<xLP.length;i++) x.add(xLP[i]);
+		for(int i=0;i<sol2.length;i++) histx.add(sol2[i]);
+		int[] indices = new int[x.size()];
+
+		double est = 0.0;
+		for(int i=0;i<histx.size();i++){
+			if(histx.get(i) <= 0)
+				est += histx.get(i);
+		}
+		
+		return est;
 	}
 	
 	public double chao92(){
@@ -361,7 +449,6 @@ public class Estimator {
 		//double[] f_sim = new double[n_size];
 		double err_sum = 0;
 		for(int rep=0;rep<n_sim;rep++){
-			
 			HashMap<Integer,double[]> simulated = new HashMap();
 			for(int i=0;i<n_w.length;i++){ //for each worker
 				HashMap<Integer,double[]> simulated_w = new HashMap(); //without replacement
@@ -369,7 +456,8 @@ public class Estimator {
 				while(j<Math.min(C_hat,n_w[i])){
 					int rank = ((int) Math.floor(r.nextDouble()*(C_hat+1))); //rank instead of value
 					//double pdf = (double) 1/C_hat; //uniform dist
-					double pdf = lambda < 0 ? 1-Math.exp((rank)*lambda/C_hat) : Math.exp(-1*(rank)*lambda/C_hat);
+					double pdf = lambda < 0 ? // exponential dist
+							1-Math.exp((rank)*lambda/C_hat) : Math.exp(-1*(rank)*lambda/C_hat);
 					
 					if(r.nextDouble() <= pdf && !simulated_w.containsKey(new Integer(rank))){
 						simulated_w.put(new Integer(rank), new double[]{1,0});
@@ -378,7 +466,7 @@ public class Estimator {
 							simulated.put(new Integer(rank), new double[]{1,0});
 						else{
 							double[] v = simulated.get(rank);
-							v[0] += 1;
+							v[0] += 1; // frequency of the item (indexed by rank)
 							simulated.replace(new Integer(rank), v);
 						}
 					}
@@ -509,14 +597,14 @@ public class Estimator {
 		if(c == 0 || f[0] == 0)
 			return c_sum;
 		
-		return (double) c_sum + f1_sum/(double) f[0] * (chao92() - c);
+		return (double) c_sum + f1_sum/(double) f[0] * (speciesEst() - c);
 	}
 	
 	public double sumf12(){
 		if(c == 0 || (f[0]+f[1]) == 0)
 			return c_sum;
 		
-		return (double) c_sum + f12_sum/(f[0] + f[1])*(chao92()-c);
+		return (double) c_sum + f12_sum/(f[0] + f[1])*(speciesEst() - c);
 	}
 	
 	public double csum(){
@@ -541,7 +629,7 @@ public class Estimator {
 		if(c == 0) //(n==0)
 			return c_sum;
 		
-		return (double) c_sum + c_sum/c*(chao92()-c); 
+		return (double) c_sum + c_sum/c*(speciesEst() - c); 
 	}
 
 	public double sampleCov() {
@@ -565,7 +653,7 @@ public class Estimator {
 			for(int i=0;i<c;i++)
 				sum += i*(i+1)*f[i]; //because i is zero-indexed
 			
-			cv = Math.max((double) c/cov*((double) sum/(double) n/(double) (n-1))-1, 0); //System.out.println(""+cv+" "+((double) c/cov*((double) sum/(double) n/(double) (n-1))-1));
+			cv = Math.max((double) c/cov*((double) sum/(double) n/(double) (n-1))-1, 0); 
 		}
 		
 		return Math.sqrt(cv);
@@ -583,6 +671,47 @@ public class Estimator {
 		
 		int C_hat = (int) Math.ceil(c/(1-Math.min((sampleCov()-1)*-1+bound,1)));
 
+		double v_est = c_sum/c;
+		double std = 0.0;
+		Iterator<Integer> itr = dist.keySet().iterator();
+		while(itr.hasNext()){
+			Integer k = itr.next();
+			double[] v = dist.get(k);
+			double cnt = v[0];
+			double val = v[1];
+			
+			std += (val-v_est)*(val-v_est)/(c-1);
+		}
+		std = Math.sqrt(std);
+		
+		double s_est = c_sum + (c_sum/c + 3*std)*(C_hat-c);
+		
+		return s_est;
+	}
+	
+	public double countCIUpper(){
+		double T = chao92() - c;
+		double var = f[1] * ( 0.5*(n-1)/n*Math.pow((double) f[0]/f[1]/2, 2) 
+				+ Math.pow((double) (n-1)/n,2)*Math.pow((double) f[0]/f[1], 3) 
+				+  0.25*Math.pow((double) (n-1)/n,2)*Math.pow((double) f[0]/f[1], 4));
+		if(f[1] == 0) var = 0.0;
+		double K = Math.exp(1.96 * Math.sqrt(Math.log(1+var/T/T)));
+		
+		if(T == 0) return c;
+		return Math.ceil(c + T*K);
+	}
+	
+	public double sumCIUpper(){
+		double T = chao92() - c;
+		double var = f[1] * ( 0.5*(n-1)/n*Math.pow((double) f[0]/f[1]/2, 2) 
+				+ Math.pow((double) (n-1)/n,2)*Math.pow((double) f[0]/f[1], 3) 
+				+  0.25*Math.pow((double) (n-1)/n,2)*Math.pow((double) f[0]/f[1], 4));
+		if(f[1] == 0) var = 0.0;
+		double K = Math.exp(1.96 * Math.sqrt(Math.log(1+var/T/T)));
+		
+		int C_hat = (int) Math.ceil(c + T*K);
+		if(T == 0) C_hat = (int) c;
+		
 		double v_est = c_sum/c;
 		double std = 0.0;
 		Iterator<Integer> itr = dist.keySet().iterator();
@@ -619,7 +748,7 @@ public class Estimator {
 		int nbkt_prev = 0;
 		
 		ArrayList<Bucket> buckets = new ArrayList<Bucket>(); 
-		Bucket init_b = new Bucket(min,max);
+		Bucket init_b = new Bucket(min, max, base_est_type);
 		
 		new QuickSort().quickSort(sample,0,sample.length-1);
 		for(Object s : sample){
@@ -661,8 +790,8 @@ public class Estimator {
 					ArrayList<Bucket> buckets_b = new ArrayList<Bucket>();
 					
 					split = (lb + ub)/2;
-					buckets_b.add(new Bucket(lb, split));
-					buckets_b.add(new Bucket(split, ub));
+					buckets_b.add(new Bucket(lb, split, base_est_type));
+					buckets_b.add(new Bucket(split, ub, base_est_type));
 					
 					for(int i=0;i<samples_b.length;i++){
 						Object s = samples_b[i];
@@ -679,8 +808,8 @@ public class Estimator {
 							: buckets_b.get(0).sumEst() + buckets_b.get(1).sumEst();
 					for(Object ss : samples_b){
 						split = ((DataItem)ss).value();
-						Bucket lbkt = new Bucket(lb,split);
-						Bucket rbkt = new Bucket(split,ub);
+						Bucket lbkt = new Bucket(lb,split, base_est_type);
+						Bucket rbkt = new Bucket(split,ub, base_est_type);
 						
 						for(int i=0;i<samples_b.length;i++){
 							Object s = samples_b[i];

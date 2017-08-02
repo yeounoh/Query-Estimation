@@ -74,15 +74,9 @@ public class DataGenerator {
 		
 		String wikiGDP = base_dir + "gdp_us.csv";
 		
-		String realGDP = table == "gdp"? base_dir + "GDP2012_Run1_marked.csv": //table: gdp (single data set exp)
-			table == "gdp1"? base_dir + "gdp1_marked.csv": //table: gdp1
-			table == "gdp2"? base_dir + "gdp2_marked.csv": // table: gdp2
-			table == "gdp3"? base_dir + "gdp3_marked.csv":null; // table: gdp3
+		String realGDP = table == "gdp"? base_dir + "GDP2012_Run1_marked.csv" : null;
 		
-		String inputEmpl = table == "employee"? base_dir + "siliconvalley1_marked.csv":
-			base_dir + "siliconvalley2_marked.csv";
-		//inputEmpl = table == "employee12"? base_dir + "siliconvalley12_marked.csv":inputEmpl;
-		//String inputEmpl2 = base_dir + "UStech_employees1_2_marked.csv";
+		String inputEmpl = table == "employee"? base_dir + "siliconvalley1_marked.csv" : null;
 		
 		String inputRevenue = table == "revenue"? base_dir + "siliconvalley_revenue1_marked.csv":
 			base_dir + "siliconvalley_revenue2_marked.csv";
@@ -100,7 +94,7 @@ public class DataGenerator {
 		
 		String line;
 		int cnt = 0;
-		if(type == 1 || type == 8 || type == 9 || type == 11){
+		if(type == 1 || type == 8 || type == 9 || type == 11 || type == 12){
 			// 1~max integer values
 			HashMap<Integer,String> rank_map = new HashMap<Integer,String>();
 			int n_item = 100;

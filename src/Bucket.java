@@ -15,12 +15,14 @@ public class Bucket {
 	private int c;
 	private int idx;
 	
-	public Bucket(){
+	private int base_est_type;
+	
+	public Bucket(int base_est_type){
 		this.samples = new HashMap<Integer,Object>();
 		this.hist = new HashMap<String,HistBar>();
 	}
 	
-	public Bucket(double lb, double ub){
+	public Bucket(double lb, double ub, int base_est_type){
 		this.n = 0;
 		this.c = 0;
 		this.f = null;
@@ -30,7 +32,7 @@ public class Bucket {
 		this.hist = new HashMap<String,HistBar>();
 	}
 	
-	public Bucket(double lb, double ub, Object[] sample){
+	public Bucket(double lb, double ub, Object[] sample, int base_est_type){
 		this.n = 0;
 		this.lower_b = lb;
 		this.upper_b = ub;
@@ -38,7 +40,7 @@ public class Bucket {
 		this.hist = new HashMap<String,HistBar>();
 	}
 	
-	public Bucket(Object[] sample){
+	public Bucket(Object[] sample, int base_est_type){
 		this.n = 0;
 		this.samples = new HashMap<Integer,Object>();
 		this.hist = new HashMap<String,HistBar>();
@@ -116,12 +118,12 @@ public class Bucket {
 	}
 	
 	public double getSampleCov(){
-		Estimator est = new Estimator(samples.values().toArray());
+		Estimator est = new Estimator(samples.values().toArray(), base_est_type);
 		return est.sampleCov();
 	}
 	
 	public double getCoeffVar(){
-		Estimator est = new Estimator(samples.values().toArray());
+		Estimator est = new Estimator(samples.values().toArray(), base_est_type);
 		return est.coeffVar();
 	}
 	
@@ -146,12 +148,12 @@ public class Bucket {
 	}
 	
 	public double sumEst(){
-		Estimator est = new Estimator(samples.values().toArray());
+		Estimator est = new Estimator(samples.values().toArray(), base_est_type);
 		return est.sumEst();
 	}
 	
 	public double countEst(){
-		Estimator est = new Estimator(samples.values().toArray());
+		Estimator est = new Estimator(samples.values().toArray(), base_est_type);
 		return est.chao92();
 	}
 	
@@ -166,7 +168,7 @@ public class Bucket {
 	}
 	
 	public double sumEstUpperBound(){
-		Estimator est = new Estimator(samples.values().toArray());
+		Estimator est = new Estimator(samples.values().toArray(), base_est_type);
 		double delta = 0.01; //at least with probability 1-delta
 		//double bound = (2*Math.sqrt(2)+Math.sqrt(3))*Math.sqrt(Math.log(3/delta)/n);
 		double bound = Math.sqrt(Math.log(1/delta)/n);
@@ -175,17 +177,17 @@ public class Bucket {
 	}
 	
 	public double max(){
-		Estimator est = new Estimator(samples.values().toArray());
+		Estimator est = new Estimator(samples.values().toArray(), base_est_type);
 		return est.getMax();
 	}
 	
 	public double min(){
-		Estimator est = new Estimator(samples.values().toArray());
+		Estimator est = new Estimator(samples.values().toArray(), base_est_type);
 		return est.getMin();
 	}
 	
 	public double maxEst(){
-		Estimator est = new Estimator(samples.values().toArray());
+		Estimator est = new Estimator(samples.values().toArray(), base_est_type);
 		double max = 0.0;
 		double max_orig = est.getMax();
 		if(est.chao92() > c){
@@ -199,7 +201,7 @@ public class Bucket {
 	}
 	
 	public double minEst(){
-		Estimator est = new Estimator(samples.values().toArray());
+		Estimator est = new Estimator(samples.values().toArray(), base_est_type);
 		double min = 0.0;
 		double min_orig = est.getMin();
 		if(est.chao92() > c){
